@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=Test
+#SBATCH --job-name=Test2
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=42G
@@ -26,6 +26,6 @@ source miniconda/bin/activate
 conda activate mdsimulations
 
 # Run program
-cd /scratch/jacopo/trans_temp/example_test/test1/
+cd /scratch/jacopo/trans_temp/example_test/replica1/
 
-python simulation.py
+python sim-1.py

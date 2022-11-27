@@ -9,7 +9,7 @@ import openmmtools
 import os
 import os.path as osp
 from ReplicaExchangeProtocol import ReplicaExchange
-import matplotlib.pyplot as plt
+
 
 if osp.exists('output-1.nc'): os.system('rm output-1.nc')
 

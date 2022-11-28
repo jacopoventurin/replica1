@@ -61,8 +61,13 @@ create_system_kwargs = dict(
 
 ff = app.ForceField(*forcefield)
 system = ff.createSystem(pdb.topology, **create_system_kwargs)
-#barostat = mm.MonteCarloBarostat(pressure, temperature)
-#force_id = system.addForce(barostat)
+
+#sampler_state = mcmc.SamplerState(positions=system.positions)
+#thermodynamic_state = mcmc.ThermodynamicState(system=system, temperature=298*unit.kelvin)
+
+
+barostat = mm.MonteCarloBarostat(pressure, temperature)
+force_id = system.addForce(barostat)
 
 #integrator = mm.LangevinMiddleIntegrator(temperature , friction , timestep)
 #integrator.setConstraintTolerance(1e-7)
@@ -76,6 +81,18 @@ n_replicas = 2
 
 protocol = {'temperature': [300,302,304,306] * unit.kelvin}
 thermodynamic_states = states.create_thermodynamic_state_protocol(system,protocol)
+
+
+#test = testsystems.AlanineDipeptideVacuum()
+#sampler_state = SamplerState(positions=test.positions)
+#thermodynamic_state = ThermodynamicState(system=test.system, temperature=298*unit.kelvin)
+#
+#Create a Langevin move with default parameters
+#move = LangevinSplittingDynamicsMove()
+#
+#or create a Langevin move with specified splitting.
+#move = LangevinSplittingDynamicsMove(splitting="O { V R V } O")
+#
 
 sampler_states = list()
 for i_t,_ in enumerate(thermodynamic_states):

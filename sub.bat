@@ -28,4 +28,4 @@ conda activate mdsimulations
 # Run program
 cd /scratch/jacopo/trans_temp/example_test/replica1/
 
-python sim-1.py
+python sim-chignolin.py

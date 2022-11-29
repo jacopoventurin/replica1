@@ -121,19 +121,7 @@ np.save('positions.npy', positions)
 np.save('forces.npy', forces)
 np.save('acceptance.npy', acceptance)
 
-#def compute_forces(coords,forces):
-#    n_frames = coords.shape[0]
-#    dists = []
-#    for fr in range(n_frames):
-#        dists.append(np.linalg.norm(coords[fr,1]-coords[fr,0]))
-#        F = np.zeros(3)
-#        for ix in range(3):
-#            tmp = -big_k.value_in_unit(unit.kilocalorie_per_mole/unit.angstrom**2) * (coords[fr,1,ix]-coords[fr,0,ix])
-#            F[ix] = tmp
-#        np.testing.assert_allclose(F,forces[fr,1],rtol=1e-4)
-#    return dists
-#
-#
+
 #for ii in range(4):
 #    dist = compute_forces(positions[ii],forces[ii])
 #    bins = np.linspace(0,0.02,25)

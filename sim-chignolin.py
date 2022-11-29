@@ -32,20 +32,10 @@ temperature = 300*unit.kelvin
 timestep = 2.0 * unit.femtosecond
 
 # Load pdb file 
-pdb = app.PDBFile('chignolin.pdb')
-traj = md.load('chignolin.pdb')
+pdb = app.PDBFile('chi_vac.pdb')
+traj = md.load('chi_vac.pdb')
 
-# Set periodic boundary condition
-xdist = traj.xyz[:,:,0].max() - traj.xyz[:,:,0].min()
-ydist = traj.xyz[:,:,1].max() - traj.xyz[:,:,1].min()
-zdist = traj.xyz[:,:,2].max() - traj.xyz[:,:,2].min()
-
-dimensions = np.zeros((3,3))
-dimensions[0][0] = xdist
-dimensions[1][1] = ydist
-dimensions[2][2] = zdist
-
-pdb.topology.setPeriodicBoxVectors(dimensions)
+modeller = app.modeller.Modeller(pdb.topology, pdb.positions)
 
 # Define system 
 create_system_kwargs = dict(
@@ -60,7 +50,10 @@ create_system_kwargs = dict(
 
 
 ff = app.ForceField(*forcefield)
-system = ff.createSystem(pdb.topology, **create_system_kwargs)
+
+modeller.addSolvent(ff)
+
+system = ff.createSystem(modeller.topology, **create_system_kwargs)
 
 #sampler_state = mcmc.SamplerState(positions=system.positions)
 #thermodynamic_state = mcmc.ThermodynamicState(system=system, temperature=298*unit.kelvin)
@@ -82,17 +75,6 @@ n_replicas = 2
 protocol = {'temperature': [300,302,304,306] * unit.kelvin}
 thermodynamic_states = states.create_thermodynamic_state_protocol(system,protocol)
 
-
-#test = testsystems.AlanineDipeptideVacuum()
-#sampler_state = SamplerState(positions=test.positions)
-#thermodynamic_state = ThermodynamicState(system=test.system, temperature=298*unit.kelvin)
-#
-#Create a Langevin move with default parameters
-#move = LangevinSplittingDynamicsMove()
-#
-#or create a Langevin move with specified splitting.
-#move = LangevinSplittingDynamicsMove(splitting="O { V R V } O")
-#
 
 sampler_states = list()
 for i_t,_ in enumerate(thermodynamic_states):

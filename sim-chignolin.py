@@ -33,7 +33,6 @@ timestep = 2.0 * unit.femtosecond
 
 # Load pdb file 
 pdb = app.PDBFile('chi_vac.pdb')
-traj = md.load('chi_vac.pdb')
 
 modeller = app.modeller.Modeller(pdb.topology, pdb.positions)
 
@@ -78,9 +77,7 @@ thermodynamic_states = states.create_thermodynamic_state_protocol(system,protoco
 
 sampler_states = list()
 for i_t,_ in enumerate(thermodynamic_states):
-    #pos = unit.Quantity(start_pos,unit=unit.angstrom)
-    pos = unit.Quantity(traj.xyz, unit=unit.nano)
-    sampler_states.append(openmmtools.states.SamplerState(positions=pos))
+    sampler_states.append(openmmtools.states.SamplerState(positions=modeller.positions))
 
 langevin_move = mcmc.LangevinSplittingDynamicsMove(
     timestep = timestep,

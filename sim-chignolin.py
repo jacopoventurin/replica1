@@ -85,8 +85,9 @@ parallel_tempering = ReplicaExchange(
     sampler_states=sampler_states, 
     mcmc_move=langevin_move
 )
-positions, forces, acceptance = parallel_tempering.run(5000,save=True)
 
-np.save('positions.npy', positions)
-np.save('forces.npy', forces)
+# Run symulation and save position and forces every 1000 timesteps
+acceptance = parallel_tempering.run(5000,save=True, save_interval=1000)
+
+
 np.save('acceptance.npy', acceptance)

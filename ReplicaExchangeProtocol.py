@@ -16,30 +16,60 @@ class ReplicaExchange:
         self.n_replicas = len(thermodynamic_states)
         self._temperature_list = [self._thermodynamic_states[i].temperature for i in range(self.n_replicas)]
 
-    def run(self, n_iterations=1, save=False):
-        self.positions = []
-        self.forces = []
+    def run(self, n_iterations=1, save=False, save_interval:int = 1):
+        """
+        Perform integration of the all system, and attempt to exchange 
+        replicas.
+
+        Params
+        ------
+        n_iteration:
+            total number of timesteps for the evolution of the system
+        save:
+            if set to True position, forces and acceptance matrix are saved, default is False
+        save_interval:
+            length of position and forces array saved, default is 100.
+            Must be a multiple of n_interaction 
+
+        Return
+        ------
+            acceptance matrix
+        """
+
+        if n_iterations+1 % save_interval != 0:
+            raise ValueError(f"save_interval must be intere multipole of n_iterations, you set {save_interval} and {n_iterations}")
+
+        positions = []
+        forces = []
         self.acceptance_matrix = np.zeros((self.n_replicas, self.n_replicas))
-        for iteration in range(n_iterations):
-            if iteration % 100 == 0: print(iteration)
+        count = 0
+
+        print('Start symulation')
+        for iteration in range(n_iterations):               
             self._propagate_replicas()
             self._mix_replicas()
 
             # Save positions and forces
             if save:
-                self.positions.append([])
+                positions.append([])
                 self.forces.append([])
-                positions, forces = self._grab_forces()
-                self.positions[-1] = positions
-                self.forces[-1] = forces
-        if save:
-            ## Output in the format shape
-            # replica, frames, n_atoms, xyz
-            positions = np.swapaxes(np.array(self.positions),0,1)
-            forces = np.swapaxes(np.array(self.forces),0,1)
-            return positions,forces,self.acceptance_matrix
-        else:
-            return _,_,self.acceptance_matrix
+                pos, forc = self._grab_forces()
+                positions[-1] = pos
+                forces[-1] = forc
+
+            if iteration+1 % save_interval == 0: 
+                print(f'Interaction {iteration} of {n_iterations}')
+                if save:    
+                    np.save(f'coords_{count}.npy',np.swapaxes(np.array(positions),0,1))
+                    np.save(f'forces_{count}.npy',np.swapaxes(np.array(forces),0,1))
+                    # Empty memory
+                    positions = []
+                    forces = []
+                    count += 1
+        
+        return self.acceptance_matrix
+
+
     def _propagate_replicas(self):
         # _thermodynamic_state[i] is associated to the replica configuration in _replicas_sampler_states[i].
         for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):

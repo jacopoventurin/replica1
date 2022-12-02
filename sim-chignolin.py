@@ -60,9 +60,12 @@ platform = mm.Platform.getPlatformByName("CUDA")
 platform_properties = {"DeviceIndex": "0", "Precision": "mixed"}
 
 # Replica setup
-n_replicas = 2
+n_replicas = 6
+min_T = 300
+max_T = 320
+Temps = np.geomspace(min_T, max_T, n_replicas)
 
-protocol = {'temperature': [300,302,304,306] * unit.kelvin}
+protocol = {'temperature': Temps * unit.kelvin}
 thermodynamic_states = states.create_thermodynamic_state_protocol(system,protocol)
 
 

@@ -36,7 +36,7 @@ class ReplicaExchange:
             acceptance matrix
         """
 
-        if n_iterations+1 % save_interval != 0:
+        if n_iterations % save_interval != 0:
             raise ValueError(f"save_interval must be intere multipole of n_iterations, you set {save_interval} and {n_iterations}")
 
         positions = []
@@ -52,7 +52,7 @@ class ReplicaExchange:
             # Save positions and forces
             if save:
                 positions.append([])
-                self.forces.append([])
+                forces.append([])
                 pos, forc = self._grab_forces()
                 positions[-1] = pos
                 forces[-1] = forc

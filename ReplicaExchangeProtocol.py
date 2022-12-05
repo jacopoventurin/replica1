@@ -16,7 +16,13 @@ class ReplicaExchange:
         self.n_replicas = len(thermodynamic_states)
         self._temperature_list = [self._thermodynamic_states[i].temperature for i in range(self.n_replicas)]
 
-    def run(self, n_iterations=1, save=False, save_interval:int = 1):
+    def run(self, 
+            n_iterations=1, 
+            save=False, 
+            save_interval:int = 1, 
+            forces_path:str = None, 
+            coords_path:str = None):
+
         """
         Perform integration of the all system, and attempt to exchange 
         replicas.
@@ -29,8 +35,11 @@ class ReplicaExchange:
             if set to True position, forces and acceptance matrix are saved, default is False
         save_interval:
             length of position and forces array saved, default is 100.
-            Must be a multiple of n_interaction 
-
+            Must be a multiple of n_interaction
+        coords_path:
+            path where to save forces
+        forces_path: 
+            path where to save coords
         Return
         ------
             acceptance matrix
@@ -38,6 +47,15 @@ class ReplicaExchange:
 
         if n_iterations % save_interval != 0:
             raise ValueError(f"save_interval must be intere multipole of n_iterations, you set {save_interval} and {n_iterations}")
+
+        if forces_path is None:
+            forces_path = 'forces_'
+        else:
+            forces_path = forces_path + '/forces'
+        if coords_path is None:
+            coords_path = 'coords_'
+        else:
+            coords_path = coords_path + '/coords'
 
         positions = []
         forces = []
@@ -60,8 +78,8 @@ class ReplicaExchange:
             if (iteration+1) % save_interval == 0: 
                 print(f'Interaction {iteration} of {n_iterations}')
                 if save:    
-                    np.save(f'coords_{count}.npy',np.swapaxes(np.array(positions),0,1))
-                    np.save(f'forces_{count}.npy',np.swapaxes(np.array(forces),0,1))
+                    np.save(f'{coords_path}_{count}.npy',np.swapaxes(np.array(positions),0,1))
+                    np.save(f'{forces_path}_{count}.npy',np.swapaxes(np.array(forces),0,1))
                     # Empty memory
                     positions = []
                     forces = []

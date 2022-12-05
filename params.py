@@ -62,7 +62,7 @@ platform_properties = {"DeviceIndex": "0", "Precision": "mixed"}
 # Replica setup
 n_replicas = 6
 min_T = 300
-max_T = 320
+max_T = 310
 Temps = np.geomspace(min_T, max_T, n_replicas)
 
 protocol = {'temperature': Temps * unit.kelvin}

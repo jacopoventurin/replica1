@@ -1,4 +1,5 @@
 import numpy as np
+import random
 from openmmtools import cache
 import openmm.unit as unit
 
@@ -155,7 +156,7 @@ class ReplicaExchange:
         elif k < 0:
             return i, j
         else:
-            jk = np.random.choice([j,k],1)
+            jk = random.choice([j,k])
             return i, jk
 
     def _compute_reduced_potential(self, sampler_state, thermo_state):

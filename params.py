@@ -90,7 +90,7 @@ parallel_tempering = ReplicaExchange(
 )
 
 # Run symulation and save position and forces every 1000 timesteps
-acceptance = parallel_tempering.run(5000,save=True, save_interval=1000, forces_path='forces', coords_path='coords')
+acceptance = parallel_tempering.run(5000,save=True, save_interval=1000, forces_path='forces', coords_path='coords', mode='neighbors')
 
 
 np.save('acceptance1.npy', acceptance)

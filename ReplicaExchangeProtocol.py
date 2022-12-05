@@ -21,7 +21,8 @@ class ReplicaExchange:
             save=False, 
             save_interval:int = 1, 
             forces_path:str = None, 
-            coords_path:str = None):
+            coords_path:str = None,
+            mode:str = 'all'):
 
         """
         Perform integration of the all system, and attempt to exchange 
@@ -40,6 +41,11 @@ class ReplicaExchange:
             path where to save forces
         forces_path: 
             path where to save coords
+        mode: 
+            can be 'all', then exchange between any possible couple 
+            of replicas is attempted, or 'neighbors', then exchange 
+            between replicaswith neighbors temperatures only 
+            is attempted
         Return
         ------
             acceptance matrix
@@ -65,7 +71,7 @@ class ReplicaExchange:
         print('Start symulation')
         for iteration in range(n_iterations):               
             self._propagate_replicas()
-            self._mix_replicas()
+            self._mix_replicas(mode = mode)
 
             # Save positions and forces
             if save:
@@ -93,12 +99,30 @@ class ReplicaExchange:
         for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
             self._mcmc_move.apply(thermo_state, sampler_state)
 
-    def _mix_replicas(self, n_attempts=1):
-        # Attempt to switch two replicas at random. Obviously, this scheme can be improved.
+    def _mix_replicas(self, n_attempts:int =1, mode:str = 'all'):
+        """
+        Attempt to switch two replicas at random or a couple of 
+        adiacent temperature replicas. 
+        Obviously, this scheme can be improved.
+        Params:
+        ------
+        n_attempts:
+            number of attempts to exchange a couple of replicas
+        mode:
+            can be 'all', then exchange between any possible couple 
+            of replicas is attempted, or 'neighbors', then exchange 
+            between replicaswith neighbors temperatures only 
+            is attempted
+        """
+        
         random_number_list = np.random.rand(n_attempts)
+
         for attempt in range(n_attempts):
             # Select two replicas at random.
-            i,j = np.sort(np.random.choice(range(len(self._thermodynamic_states)),2,replace=False))
+            if mode == 'all':
+                i,j = np.sort(np.random.choice(range(len(self._thermodynamic_states)),2,replace=False))
+            elif mode == 'neighbors':
+                i,j = self._adiacent()
             self.acceptance_matrix[j,i] += 1
             sampler_state_i, sampler_state_j = (self._replicas_sampler_states[k] for k in [i, j])
             thermo_state_i, thermo_state_j = (self._thermodynamic_states[k] for k in [i, j])
@@ -116,6 +140,22 @@ class ReplicaExchange:
                 self._thermodynamic_states[i] = thermo_state_j
                 self._thermodynamic_states[j] = thermo_state_i
                 self.acceptance_matrix[i,j] += 1
+
+    def _adiacent(self):
+        """
+        Find random indeces of adiacent replicas
+        """
+        i = np.sort(np.random.choice(range(self._thermodynamic_states),1,replace=False))
+        j = int(i + 1)
+        k = int(i - 1)
+
+        if j  > np.max(range(self._thermodynamic_states)):
+            return i, k
+        elif k < np.min(range(self._thermodynamic_states)):
+            return i, j
+        else:
+            jk = np.random.choice([j,k],1)
+            return i, jk
 
     def _compute_reduced_potential(self, sampler_state, thermo_state):
         # Obtain a Context to compute the energy with OpenMM. Any integrator will do.

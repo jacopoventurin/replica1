@@ -145,13 +145,14 @@ class ReplicaExchange:
         """
         Find random indeces of adiacent replicas
         """
-        i = np.sort(np.random.choice(range(len(self._thermodynamic_states)),1,replace=False))
-        j = int(i + 1)
-        k = int(i - 1)
+        temps = len(self._thermodynamic_states)-1
+        i = np.randint(0, temps)
+        j = i + 1
+        k = i - 1
 
-        if j  > np.max(range(len(self._thermodynamic_states))):
+        if j  > temps:
             return i, k
-        elif k < np.min(range(len(self._thermodynamic_states))):
+        elif k < 0:
             return i, j
         else:
             jk = np.random.choice([j,k],1)

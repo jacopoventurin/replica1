@@ -114,7 +114,7 @@ class ReplicaExchange:
             between replicaswith neighbors temperatures only 
             is attempted
         """
-        
+
         random_number_list = np.random.rand(n_attempts)
 
         for attempt in range(n_attempts):
@@ -145,13 +145,13 @@ class ReplicaExchange:
         """
         Find random indeces of adiacent replicas
         """
-        i = np.sort(np.random.choice(range(self._thermodynamic_states),1,replace=False))
+        i = np.sort(np.random.choice(range(len(self._thermodynamic_states)),1,replace=False))
         j = int(i + 1)
         k = int(i - 1)
 
-        if j  > np.max(range(self._thermodynamic_states)):
+        if j  > np.max(range(len(self._thermodynamic_states))):
             return i, k
-        elif k < np.min(range(self._thermodynamic_states)):
+        elif k < np.min(range(len(self._thermodynamic_states))):
             return i, j
         else:
             jk = np.random.choice([j,k],1)

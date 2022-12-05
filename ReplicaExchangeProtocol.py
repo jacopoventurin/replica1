@@ -146,7 +146,7 @@ class ReplicaExchange:
         Find random indeces of adiacent replicas
         """
         temps = len(self._thermodynamic_states)-1
-        i = np.randint(0, temps)
+        i = np.random.randint(0, temps)
         j = i + 1
         k = i - 1
 

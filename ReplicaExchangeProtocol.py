@@ -57,7 +57,7 @@ class ReplicaExchange:
                 positions[-1] = pos
                 forces[-1] = forc
 
-            if iteration+1 % save_interval == 0: 
+            if (iteration+1) % save_interval == 0: 
                 print(f'Interaction {iteration} of {n_iterations}')
                 if save:    
                     np.save(f'coords_{count}.npy',np.swapaxes(np.array(positions),0,1))

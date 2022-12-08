@@ -5,12 +5,10 @@ from openmm import unit
 import openmm.app as app
 import os
 from openmmtools import states, mcmc
-from openmmtools.multistate import ReplicaExchangeSampler, MultiStateReporter
 import openmmtools
 import os
 import os.path as osp
-import tempfile
-
+from ReplicaExchangeProtocol import ReplicaExchange
 
 
 if osp.exists('output-1.nc'): os.system('rm output-1.nc')
@@ -54,41 +52,57 @@ ff = app.ForceField(*forcefield)
 
 # Create a system
 system = ff.createSystem(modeller.topology, **create_system_kwargs)
-barostat = mm.MonteCarloBarostat(pressure, temperature)
-force_id = system.addForce(barostat)
+
+#barostat = mm.MonteCarloBarostat(pressure, temperature)
+#force_id = system.addForce(barostat)
 
 
 platform = mm.Platform.getPlatformByName("CUDA")
 platform_properties = {"DeviceIndex": "0", "Precision": "mixed"}
 
 # Replica setup
-n_replicas = 5
+n_replicas = 6
 min_T = 300
 max_T = 320
 Temps = np.geomspace(min_T, max_T, n_replicas)
 
+protocol = {'temperature': Temps * unit.kelvin}
+thermodynamic_states = states.create_thermodynamic_state_protocol(system,protocol)
 
-thermodynamic_states = [states.ThermodynamicState(system=system, temperature=T) for T in Temps]
+sampler_states = list()
+for i_t,_ in enumerate(thermodynamic_states):
+    sampler_states.append(openmmtools.states.SamplerState(positions=modeller.positions))
 
-
-#Initialize simulation object with options. Run with a Langevin integrator.
-
-langevin_move = mcmc.LangevinDynamicsMove(
+langevin_move = mcmc.LangevinSplittingDynamicsMove(
     timestep = timestep,
     collision_rate = friction,
     n_steps = 1000, # 2ps
     reassign_velocities=False,
+    n_restart_attempts=20,
+    splitting="V R O R V"
 )
-simulation = ReplicaExchangeSampler(mcmc_moves=langevin_move, number_of_iterations=5000)
 
-#Create simulation with its storage file and run.
+# Define class for replica exchange
+parallel_tempering = ReplicaExchange(
+    thermodynamic_states=thermodynamic_states, 
+    sampler_states=sampler_states, 
+    mcmc_move=langevin_move
+)
 
-storage_path = '/data/traj.nc'
-reporter = MultiStateReporter(storage_path, checkpoint_interval=100)
-simulation.create(thermodynamic_states=thermodynamic_states,
-                  sampler_states=states.SamplerState(system.positions),
-                  storage=reporter)
+# Run symulation and save position and forces every 100 timesteps
 
-simulation.run(n_iterations=5000)
+for run in range(10):
+    acceptance = parallel_tempering.run(500,save=True, save_interval=100) # 500 exchange attempts
+    ## Save checkpoint
+    parallel_tempering.save('model_chignolin')
+    ## Grab contexts from acceptance here
+    r = np.save(f'acceptance{run}.npy', acceptance)
+    err_inf = np.where(r<0.2)
+    err_sup = np.where(r>0.3)
+    print(f'Too many exchanges in groups {err_inf}')
+    print(f'Too few exchanges in groups {err_inf}')
+    
+    
+
 
 

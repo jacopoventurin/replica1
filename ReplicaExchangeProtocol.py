@@ -1,5 +1,8 @@
 import numpy as np
 import random
+#from six.moves import cPickle
+#import _pickle as cPickle
+import pickle
 from openmmtools import cache
 import openmm.unit as unit
 
@@ -11,11 +14,14 @@ class ReplicaExchange:
         sampler_states=None,
         mcmc_move=None,
     ):
-        self._thermodynamic_states = thermodynamic_states
-        self._replicas_sampler_states = sampler_states
-        self._mcmc_move = mcmc_move
-        self.n_replicas = len(thermodynamic_states)
-        self._temperature_list = [self._thermodynamic_states[i].temperature for i in range(self.n_replicas)]
+        try:
+            self._thermodynamic_states = thermodynamic_states
+            self._replicas_sampler_states = sampler_states
+            self._mcmc_move = mcmc_move
+            self.n_replicas = len(thermodynamic_states)
+            self._temperature_list = [self._thermodynamic_states[i].temperature for i in range(self.n_replicas)]
+        except:
+            pass
 
     def run(self, 
             n_iterations=1, 
@@ -93,6 +99,18 @@ class ReplicaExchange:
                     count += 1
         
         return self.acceptance_matrix
+
+    def save(self, name):
+        """save class as name.txt"""
+        file = open(name+'.txt','wb')
+        pickle.dump(self.__dict__, file)
+        file.close()
+
+    def load(self, name):
+        """try load name.txt"""
+        file = open(name+'.txt','rb')
+        self.__dict__ = pickle.load(file)
+        file.close()
 
 
     def _propagate_replicas(self):

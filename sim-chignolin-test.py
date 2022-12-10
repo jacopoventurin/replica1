@@ -61,9 +61,9 @@ platform = mm.Platform.getPlatformByName("CUDA")
 platform_properties = {"DeviceIndex": "0", "Precision": "mixed"}
 
 # Replica setup
-n_replicas = 6
-min_T = 300
-max_T = 320
+n_replicas = 36
+min_T = 280
+max_T = 400
 Temps = np.geomspace(min_T, max_T, n_replicas)
 
 protocol = {'temperature': Temps * unit.kelvin}
@@ -92,11 +92,11 @@ parallel_tempering = ReplicaExchange(
 # Run symulation and save position and forces every 100 timesteps
 
 for run in range(10):
-    acceptance = parallel_tempering.run(500,save=True, save_interval=100) # 500 exchange attempts
-    ## Save checkpoint
-    parallel_tempering.save('model_chignolin')
+    acceptance = parallel_tempering.run(500, save=False, checkpoint_simulations=True) # 500 exchange attempts
+    np.save(f'acceptance{run}.npy', acceptance)
     ## Grab contexts from acceptance here
-    r = np.save(f'acceptance{run}.npy', acceptance)
+    r = np.divide(np.diag(acceptance, 1), np.diag(acceptance, -1))
+    print(r)
     err_inf = np.where(r<0.2)
     err_sup = np.where(r>0.3)
     print(f'Too many exchanges in groups {err_inf}')

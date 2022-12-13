@@ -20,6 +20,8 @@ class ReplicaExchange:
     def run(self, 
             n_iterations:int = 1, 
             n_attempts:int = 1, 
+            equilibration_timesteps:int =1,
+            production_timesteps:int =1,
             save:bool = False, 
             save_interval:int = 1, 
             checkpoint_simulations:bool = False, 
@@ -34,9 +36,13 @@ class ReplicaExchange:
             number of iteration to perform during the all symulation, default is 1.
         n_attempts:
             number of attempts to exchange a pair of replicas for each iteration, default is 1.
+        equilibraton_timesteps:
+            how many times apply mcm_move for the equilibration phase.
+        production_timesteps:
+            how many times apply mcm_move for the production phase. 
         save:
-            if set to True position and forces are saved every save_interval steps.
-            Position and forces are returned as numpy array.
+            if set to True position and forces are saved every save_interval steps during 
+            the production phase. Position and forces are returned as numpy array.
         save_interval:
             interval for save position and forces, default is 1.
         checkpoint_simulations:
@@ -55,17 +61,12 @@ class ReplicaExchange:
             self._define_neighbors()
         for iteration in range(n_iterations):
             if iteration % 100 == 0: print(iteration)
-            self._propagate_replicas()
+            # Eequilibration
+            self._propagate_replicas(n_timesteps=equilibration_timesteps, save=False)
+            # Production
+            self._propagate_replicas(n_timesteps=production_timesteps, save=True, save_interval=1)
+            # Exchange between replicas
             self._mix_replicas(mixing=mixing, n_attempts=n_attempts)
-
-            # Save positions and forces
-            if save:
-                if iteration % save_interval == 0:
-                    self.positions.append([])
-                    self.forces.append([])
-                    positions, forces = self._grab_forces()
-                    self.positions[-1] = positions
-                    self.forces[-1] = forces
 
             if checkpoint_simulations:
                 self._save_contexts()
@@ -79,10 +80,22 @@ class ReplicaExchange:
         else:
             return self.acceptance_matrix
 
-    def _propagate_replicas(self):
-        # _thermodynamic_state[i] is associated to the replica configuration in _replicas_sampler_states[i].
-        for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
-            self._mcmc_move.apply(thermo_state, sampler_state)
+    def _propagate_replicas(self, n_timesteps:int = 1, save:bool = False, save_interval:int = 1):
+        """
+        Apply _mcm_move to all the replicas n_timesteps times. If save is set to True
+        position and forces are saved every save_interval time.
+        _thermodynamic_state[i] is associated to the replica configuration in _replicas_sampler_states[i].
+        """
+        for timestep in range(n_timesteps):
+            for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
+                self._mcmc_move.apply(thermo_state, sampler_state)
+            if save:
+                if timestep % save_interval == 0:
+                    self.positions.append([])
+                    self.forces.append([])
+                    positions, forces = self._grab_forces()
+                    self.positions[-1] = positions
+                    self.forces[-1] = forces
 
     def _mix_replicas(self, mixing:str = 'all', n_attempts=1,):
         """

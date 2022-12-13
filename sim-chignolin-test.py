@@ -94,15 +94,15 @@ parallel_tempering = ReplicaExchange(
 
 sim_params ={
     'n_attempts': 1, 
-    'equilibration_timesteps': 1, # 1ps
-    'production_timesteps': 1,  # 1ps
+    'equilibration_timesteps': 100, # 100 ps
+    'production_timesteps': 500,  # 500 ps
     'save': True, 
-    'save_interval': 1, # save every ps
+    'save_interval': 2, # save every 2 ps
     'checkpoint_simulations': True, 
     'mixing': 'neighbors'   #try exchange between neighbors only
 }
 
-position, forces, acceptance = parallel_tempering.run(5000, **sim_params)
+position, forces, acceptance = parallel_tempering.run(200, **sim_params) # 100 ns of production time 
 np.save(f'position.npy', position)
 np.save(f'forces.npy', forces)
 np.save(f'acceptance.npy', acceptance)

@@ -138,7 +138,7 @@ class ReplicaExchange:
                     self._thermodynamic_states[j] = thermo_state_i
                     self.acceptance_matrix[i,j] += 1
         elif mixing == 'all':
-            U = self._compute_reduced_pottential_matrix()
+            U = self._compute_reduced_potential_matrix()
             for attempt in range(n_attempts):
                 # Select two replicas at random
                 i,j = np.sort(np.random.choice(range(len(self._thermodynamic_states)),2,replace=False))

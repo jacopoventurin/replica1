@@ -76,7 +76,7 @@ for i_t,_ in enumerate(thermodynamic_states):
 langevin_move = mcmc.LangevinSplittingDynamicsMove(
     timestep = timestep,
     collision_rate = friction,
-    n_steps = 1000, # 2ps
+    n_steps = 500, # 1ps
     reassign_velocities=False,
     n_restart_attempts=20,
     splitting="V R O R V"
@@ -91,16 +91,22 @@ parallel_tempering = ReplicaExchange(
 
 # Run symulation and save position and forces every 100 timesteps
 
-for run in range(10):
-    acceptance = parallel_tempering.run(500, save=False, checkpoint_simulations=True) # 500 exchange attempts
-    np.save(f'acceptance{run}.npy', acceptance)
-    ## Grab contexts from acceptance here
-    r = np.divide(np.diag(acceptance, 1), np.diag(acceptance, -1))
-    print(r)
-    err_inf = np.where(r<0.2)
-    err_sup = np.where(r>0.3)
-    print(f'Too many exchanges in groups {err_inf}')
-    print(f'Too few exchanges in groups {err_inf}')
+
+sim_params ={
+    'n_attempts': 1, 
+    'equilibration_timesteps': 1, # 1ps
+    'production_timesteps': 1,  # 1ps
+    'save': True, 
+    'save_interval': 1, # save every ps
+    'checkpoint_simulations': True, 
+    'mixing': 'neighbors'   #try exchange between neighbors only
+}
+
+position, forces, acceptance = parallel_tempering.run(5000, **sim_params)
+np.save(f'position.npy', position)
+np.save(f'forces.npy', forces)
+np.save(f'acceptance.npy', acceptance)
+
     
     
 

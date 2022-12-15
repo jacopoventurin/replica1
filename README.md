@@ -1,3 +1,5 @@
 # replica1
 
-This prgect contains the code to perform a replica exchange simulation for chignolin.
+This project contains code to perform replica exchange simulation with openmm
+    Examples:
+        chignolin

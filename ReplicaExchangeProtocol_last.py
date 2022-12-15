@@ -10,18 +10,20 @@ class ReplicaExchange:
         thermodynamic_states=None,
         sampler_states=None,
         mcmc_move=None,
+        rescale_velocities=False,
     ):
         self._thermodynamic_states = thermodynamic_states
         self._replicas_sampler_states = sampler_states
         self._mcmc_move = mcmc_move
         self.n_replicas = len(thermodynamic_states)
         self._temperature_list = [self._thermodynamic_states[i].temperature for i in range(self.n_replicas)]
+        self.rescale_velocities = rescale_velocities
 
     def run(self, 
             n_iterations:int = 1, 
             n_attempts:int = 1, 
-            equilibration_timesteps:int =1,
-            production_timesteps:int =1,
+            md_timesteps:int =1,
+            equilibration_timesteps:int =0,  
             save:bool = False, 
             save_interval:int = 1, 
             checkpoint_simulations:bool = False, 
@@ -36,10 +38,10 @@ class ReplicaExchange:
             number of iteration to perform during the all symulation, default is 1.
         n_attempts:
             number of attempts to exchange a pair of replicas for each iteration, default is 1.
+        md_timesteps:
+            how many md timesteps propagate the system for each iteration. 
         equilibraton_timesteps:
-            how many times apply mcm_move for the equilibration phase.
-        production_timesteps:
-            how many times apply mcm_move for the production phase. 
+            how long is the equilibration phase.       
         save:
             if set to True position and forces are saved every save_interval steps during 
             the production phase. Position and forces are returned as numpy array.
@@ -61,11 +63,11 @@ class ReplicaExchange:
             self._define_neighbors()
         for iteration in range(n_iterations):
             if iteration % 100 == 0: print(iteration)
-            # Eequilibration
-            self._propagate_replicas(n_timesteps=equilibration_timesteps, save=False)
-            # Production
-            self._propagate_replicas(n_timesteps=production_timesteps, save=True, save_interval=1)
-            # Exchange between replicas
+
+            ## Propagate dynamics
+            self._propagate_replicas(md_timesteps=md_timesteps, equilibration_timesteps=equilibration_timesteps, 
+                                        save=save, save_interval=save_interval)
+            ## Mix replicas
             self._mix_replicas(mixing=mixing, n_attempts=n_attempts)
 
             if checkpoint_simulations:
@@ -80,22 +82,26 @@ class ReplicaExchange:
         else:
             return self.acceptance_matrix
 
-    def _propagate_replicas(self, n_timesteps:int = 1, save:bool = False, save_interval:int = 1):
+    def _propagate_replicas(self, 
+                            md_timesteps:int = 1, 
+                            equilibration_timesteps:int = 0, 
+                            save:bool = False, 
+                            save_interval:int = 1):
         """
-        Apply _mcm_move to all the replicas n_timesteps times. If save is set to True
-        position and forces are saved every save_interval time.
+        Apply _mcm_move to all the replicas md_timesteps times. If equilibration_timesteps > 0,
+        an equilibration phase is considered before try to save position and forces.
+        If save is set to True position and forces are saved every save_interval time.
         _thermodynamic_state[i] is associated to the replica configuration in _replicas_sampler_states[i].
         """
-        for timestep in range(n_timesteps):
+        for md_step in range(md_timesteps):
             for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
                 self._mcmc_move.apply(thermo_state, sampler_state)
-            if save:
-                if timestep % save_interval == 0:
-                    self.positions.append([])
-                    self.forces.append([])
-                    positions, forces = self._grab_forces()
-                    self.positions[-1] = positions
-                    self.forces[-1] = forces
+            if md_step > equilibration_timesteps:
+                    if save and (md_step % save_interval == 0):
+                        self.positions.append([])
+                        self.forces.append([])
+                        self.positions[-1], self.forces[-1] = self._grab_forces()
+
 
     def _mix_replicas(self, mixing:str = 'all', n_attempts=1,):
         """
@@ -137,18 +143,31 @@ class ReplicaExchange:
                     self._thermodynamic_states[i] = thermo_state_j
                     self._thermodynamic_states[j] = thermo_state_i
                     self.acceptance_matrix[i,j] += 1
+
         elif mixing == 'all':
-            U = self._compute_reduced_potential_matrix()
+            # If more than several swaps more efficient to compute energies first
+            if n_attempts > self.n_replicas:
+                energy_matrix = self._compute_reduced_potential_matrix()
+            else:
+                energy_matrix = None
+            # Attempts to exchnge n_attempts times     
             for attempt in range(n_attempts):
                 # Select two replicas at random
                 i,j = np.sort(np.random.choice(range(len(self._thermodynamic_states)),2,replace=False))
                 self.acceptance_matrix[j,i] += 1
 
-                # Get precomputed energy from the energy matrix
-                energy_ii = U[i,i]
-                energy_jj = U[j,j]
-                energy_ij = U[i,j]
-                energy_ji = U[j,i]
+                # Compute the energies.
+                if energy_matrix is None:
+                    sampler_state_i, sampler_state_j = (self._replicas_sampler_states[k] for k in [i, j])
+                    thermo_state_i, thermo_state_j = (self._thermodynamic_states[k] for k in [i, j])
+                    energy_ii = self._compute_reduced_potential(sampler_state_i, thermo_state_i)
+                    energy_jj = self._compute_reduced_potential(sampler_state_j, thermo_state_j)
+                    energy_ij = self._compute_reduced_potential(sampler_state_i, thermo_state_j)
+                    energy_ji = self._compute_reduced_potential(sampler_state_j, thermo_state_i)
+                else:
+                    energy_ii,energy_jj = energy_matrix[i,i], energy_matrix[j,j]
+                    energy_ij,energy_ji = energy_matrix[i,j], energy_matrix[j,i]
+
 
                 # Accept or reject the swap.
                 log_p_accept = -(energy_ij + energy_ji) + energy_ii + energy_jj
@@ -156,21 +175,30 @@ class ReplicaExchange:
                     # Swap states in replica slots i and j.
                     self._thermodynamic_states[i] , self._thermodynamic_states[j] = self._thermodynamic_states[j], self._thermodynamic_states[i]
                     # Swap i and j row in reduced_potential_matrix
-                    U[[i, j]] = U[[j, i]]
+                    energy_matrix[[i, j]] = energy_matrix[[j, i]]
                     self.acceptance_matrix[i,j] += 1
+            
+            # Reset velocities 
+            if self.rescale_velocities == True:
+               self._rescale_velocities()
 
 
     def _compute_reduced_potential_matrix(self):
         # Compute the reduced potential matrix between all possible couples
-        dimension = len(self._thermodynamic_states)
-        U = np.zeros((dimension,dimension))
-        for i in range(dimension):
-            sampler_state_i = self._replicas_sampler_states[i]
-            for j in range(dimension):
-                thermo_state_j = self._thermodynamic_states[j]
-                U[i,j] = self._compute_reduced_potential(sampler_state_i, thermo_state_j)
-        return U
+        energy_matrix = np.zeros((self.n_replicas,self.n_replicas))
+        for i,thermo_state in enumerate(self._thermodynamic_states):
+                for j,sampler_state in enumerate(self._replicas_sampler_states):
+                    energy_matrix[j,i] = self._compute_reduced_potential(sampler_state, thermo_state)
+        return energy_matrix
 
+    def _rescale_velocities(self):
+        '''
+            Put velocities to desired temperature
+        '''
+        for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
+            context, _ = cache.global_context_cache.get_context(thermo_state)
+            sampler_state.apply_to_context(context)
+            context.setVelocitiesToTemperature(thermo_state.temperature)
 
 
     def _define_neighbors(self):

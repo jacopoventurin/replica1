@@ -181,9 +181,9 @@ class ReplicaExchange:
                 self.acceptance_matrix[i, j] += 1
 
                 if energy_matrix is not None:
-                    energy_matrix[i] = tmp
+                    tmp = energy_matrix[i] 
                     energy_matrix[i] = energy_matrix[j]
-                    energy_matrix[j] = energy_matrix[i]
+                    energy_matrix[j] = tmp
 
         if self.rescale_velocities:
             self._rescale_velocities()

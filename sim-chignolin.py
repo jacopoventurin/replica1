@@ -52,22 +52,22 @@ ff = app.ForceField(*forcefield)
 
 # Create a system
 system = ff.createSystem(modeller.topology, **create_system_kwargs)
-barostat = mm.MonteCarloBarostat(pressure, temperature)
-force_id = system.addForce(barostat)
+
+#barostat = mm.MonteCarloBarostat(pressure, temperature)
+#force_id = system.addForce(barostat)
 
 
 platform = mm.Platform.getPlatformByName("CUDA")
 platform_properties = {"DeviceIndex": "0", "Precision": "mixed"}
 
 # Replica setup
-n_replicas = 6
-min_T = 300
-max_T = 320
+n_replicas = 36
+min_T = 280
+max_T = 400
 Temps = np.geomspace(min_T, max_T, n_replicas)
 
 protocol = {'temperature': Temps * unit.kelvin}
 thermodynamic_states = states.create_thermodynamic_state_protocol(system,protocol)
-
 
 sampler_states = list()
 for i_t,_ in enumerate(thermodynamic_states):
@@ -76,7 +76,7 @@ for i_t,_ in enumerate(thermodynamic_states):
 langevin_move = mcmc.LangevinSplittingDynamicsMove(
     timestep = timestep,
     collision_rate = friction,
-    n_steps = 1000, # 2ps
+    n_steps = 500, # 1ps
     reassign_velocities=False,
     n_restart_attempts=20,
     splitting="V R O R V"
@@ -86,11 +86,30 @@ langevin_move = mcmc.LangevinSplittingDynamicsMove(
 parallel_tempering = ReplicaExchange(
     thermodynamic_states=thermodynamic_states, 
     sampler_states=sampler_states, 
-    mcmc_move=langevin_move
+    mcmc_move=langevin_move,
+    rescale_velocities=True,
 )
 
-# Run symulation and save position and forces every 1000 timesteps
-acceptance = parallel_tempering.run(5000,save=True, save_interval=1000)
+# Run symulation and save position and forces every 100 timesteps
 
 
-np.save('acceptance.npy', acceptance)
+sim_params ={
+    'n_attempts': 129,
+    'md_timesteps': 510, #510 ps 
+    'equilibration_timesteps': 10, # 10 ps
+    'save': True, 
+    'save_interval': 2, # save every 2 ps
+    'checkpoint_simulations': True, 
+    'mixing': 'all'   #try exchange between neighbors only
+}
+
+position, forces, acceptance = parallel_tempering.run(200, **sim_params) # 100 ns of production time 
+np.save(f'position.npy', position)
+np.save(f'forces.npy', forces)
+np.save(f'acceptance.npy', acceptance)
+
+    
+    
+
+
+

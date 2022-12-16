@@ -61,8 +61,9 @@ class ReplicaExchange:
         self.acceptance_matrix = np.zeros((self.n_replicas, self.n_replicas))
         if mixing == 'neighbors':
             self._define_neighbors()
+        print_rate = int(n_iterations/10)
         for iteration in range(n_iterations):
-            if iteration % 100 == 0: print(iteration)
+            if iteration % print_rate == 0: print(iteration)
 
             ## Propagate dynamics
             self._propagate_replicas(md_timesteps=md_timesteps, equilibration_timesteps=equilibration_timesteps, 

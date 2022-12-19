@@ -55,6 +55,11 @@ class ReplicaExchange:
             n_attempts should be at least n_replicas*log(n_replicas), where n_replicas is the total 
             number of replicas in the simulation. See https://aip.scitation.org/doi/10.1063/1.3660669
             for more information.
+
+        Return
+        ------
+            If save is set to True position, forces, acceptance_matrix are returned.
+            If save is set to False acceptance_matrix only is returned
         """
         self.positions = []
         self.forces = []
@@ -86,7 +91,7 @@ class ReplicaExchange:
                             save:bool = False, 
                             save_interval:int = 1):
         """
-        Apply _mcm_move to all the replicas md_timesteps times. If equilibration_timesteps > 0,
+        Apply _mcmc_move to all the replicas md_timesteps times. If equilibration_timesteps > 0,
         an equilibration phase is considered before try to save position and forces.
         If save is set to True position and forces are saved every save_interval time.
         _thermodynamic_state[i] is associated to the replica configuration in _replicas_sampler_states[i].
@@ -120,61 +125,40 @@ class ReplicaExchange:
             number of attempts to exchange a pair of replicas for each iteration, default is 1.
         """
         random_number_list = np.random.rand(n_attempts)
-        if mixing == 'neighbors':
-            for attempt in range(n_attempts):
-                #select two random neighbors
+        # If more than several swaps more efficient to compute energies first
+        if n_attempts > self.n_replicas:
+            energy_matrix = self._compute_reduced_potential_matrix()
+        else:
+            energy_matrix = None
+
+        # Attempts to exchnge n_attempts times 
+        for attempt in range(n_attempts):
+            if mixing == 'neighbors':
                 i,j = np.sort(self.couples[np.random.randint(len(self.couples))])
-                self.acceptance_matrix[j,i] += 1
+            elif mixing == 'all':
+                i,j = np.sort(np.random.choice(range(len(self._thermodynamic_states)),2,replace=False))
+            self.acceptance_matrix[j,i] += 1
+
+            # Compute the energies.
+            if energy_matrix is None:
                 sampler_state_i, sampler_state_j = (self._replicas_sampler_states[k] for k in [i, j])
                 thermo_state_i, thermo_state_j = (self._thermodynamic_states[k] for k in [i, j])
-    
-                # Compute the energies.
                 energy_ii = self._compute_reduced_potential(sampler_state_i, thermo_state_i)
                 energy_jj = self._compute_reduced_potential(sampler_state_j, thermo_state_j)
                 energy_ij = self._compute_reduced_potential(sampler_state_i, thermo_state_j)
                 energy_ji = self._compute_reduced_potential(sampler_state_j, thermo_state_i)
-    
-                # Accept or reject the swap.
-                log_p_accept = -(energy_ij + energy_ji) + energy_ii + energy_jj
-                if random_number_list[attempt] < np.exp(log_p_accept):
-                    # Swap states in replica slots i and j.
-                    self._thermodynamic_states[i] = thermo_state_j
-                    self._thermodynamic_states[j] = thermo_state_i
-                    self.acceptance_matrix[i,j] += 1
-
-        elif mixing == 'all':
-            # If more than several swaps more efficient to compute energies first
-            if n_attempts > self.n_replicas:
-                energy_matrix = self._compute_reduced_potential_matrix()
             else:
-                energy_matrix = None
-            # Attempts to exchnge n_attempts times     
-            for attempt in range(n_attempts):
-                # Select two replicas at random
-                i,j = np.sort(np.random.choice(range(len(self._thermodynamic_states)),2,replace=False))
-                self.acceptance_matrix[j,i] += 1
+                energy_ii,energy_jj = energy_matrix[i,i], energy_matrix[j,j]
+                energy_ij,energy_ji = energy_matrix[i,j], energy_matrix[j,i]
 
-                # Compute the energies.
-                if energy_matrix is None:
-                    sampler_state_i, sampler_state_j = (self._replicas_sampler_states[k] for k in [i, j])
-                    thermo_state_i, thermo_state_j = (self._thermodynamic_states[k] for k in [i, j])
-                    energy_ii = self._compute_reduced_potential(sampler_state_i, thermo_state_i)
-                    energy_jj = self._compute_reduced_potential(sampler_state_j, thermo_state_j)
-                    energy_ij = self._compute_reduced_potential(sampler_state_i, thermo_state_j)
-                    energy_ji = self._compute_reduced_potential(sampler_state_j, thermo_state_i)
-                else:
-                    energy_ii,energy_jj = energy_matrix[i,i], energy_matrix[j,j]
-                    energy_ij,energy_ji = energy_matrix[i,j], energy_matrix[j,i]
-
-
-                # Accept or reject the swap.
-                log_p_accept = -(energy_ij + energy_ji) + energy_ii + energy_jj
-                if random_number_list[attempt] < np.exp(log_p_accept):
-                    # Swap states in replica slots i and j.
-                    self._thermodynamic_states[i] , self._thermodynamic_states[j] = self._thermodynamic_states[j], self._thermodynamic_states[i]
-                    # Swap i and j row in reduced_potential_matrix
-                    energy_matrix[[i, j]] = energy_matrix[[j, i]]
-                    self.acceptance_matrix[i,j] += 1
+            # Accept or reject the swap.
+            log_p_accept = -(energy_ij + energy_ji) + energy_ii + energy_jj
+            if random_number_list[attempt] < np.exp(log_p_accept):
+                # Swap states in replica slots i and j.
+                self._thermodynamic_states[i] , self._thermodynamic_states[j] = self._thermodynamic_states[j], self._thermodynamic_states[i]
+                # Swap i and j row in reduced_potential_matrix
+                energy_matrix[[i, j]] = energy_matrix[[j, i]]
+                self.acceptance_matrix[i,j] += 1
             
             # Reset velocities 
             if self.rescale_velocities == True:

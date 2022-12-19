@@ -9,6 +9,7 @@ import openmmtools
 import os
 import os.path as osp
 from ReplicaExchangeProtocol import ReplicaExchange
+import time
 
 
 if osp.exists('output-1.nc'): os.system('rm output-1.nc')
@@ -94,22 +95,33 @@ parallel_tempering = ReplicaExchange(
 
 
 sim_params ={
-    'n_attempts': 129,
+    'n_attempts': 129, #n_replicas*log(n_replicas)
     'md_timesteps': 510, #510 ps 
     'equilibration_timesteps': 10, # 10 ps
     'save': True, 
     'save_interval': 2, # save every 2 ps
     'checkpoint_simulations': True, 
-    'mixing': 'all'   #try exchange between neighbors only
+    'mixing': 'all'   #try exchange between all replicas
 }
 
-position, forces, acceptance = parallel_tempering.run(200, **sim_params) # 100 ns of production time 
-np.save(f'position.npy', position)
-np.save(f'forces.npy', forces)
-np.save(f'acceptance.npy', acceptance)
+
+print('Simulation of 10 ns trajectory trying 129 exchange between all replicas for each timesteps and with rescale of velocities')
+print('-' * 50)
+start = time.time()
+print(f'Simulation started at time {start}')
+print('-' * 50)
+
+for step in range(10):   # 10 ns of production time 
+    print(f'{step} ns of simulation')
+    position, forces, acceptance = parallel_tempering.run(2, **sim_params) # locally save position and forces every ns 
+    np.save(f'position_{step}.npy', position)
+    np.save(f'forces_{step}.npy', forces)
+    np.save(f'acceptance_{step}.npy', acceptance)
 
     
-    
+end = time.time()
+print(f'Simulation ended at {end}')
+print(f'Total simulation time {end-start}')
 
 
 

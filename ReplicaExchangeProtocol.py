@@ -156,9 +156,11 @@ class ReplicaExchange:
             if random_number_list[attempt] < np.exp(log_p_accept):
                 # Swap states in replica slots i and j.
                 self._thermodynamic_states[i] , self._thermodynamic_states[j] = self._thermodynamic_states[j], self._thermodynamic_states[i]
-                # Swap i and j row in reduced_potential_matrix
-                energy_matrix[[i, j]] = energy_matrix[[j, i]]
                 self.acceptance_matrix[i,j] += 1
+                if energy_matrix is not None:
+                    # Swap i and j row in reduced_potential_matrix
+                    energy_matrix[[i, j]] = energy_matrix[[j, i]]
+                
             
             # Reset velocities 
             if self.rescale_velocities == True:

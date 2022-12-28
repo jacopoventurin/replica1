@@ -96,14 +96,23 @@ parallel_tempering = ReplicaExchange(
 
 sim_params ={
     'n_attempts': 129, #n_replicas*log(n_replicas)
-    'md_timesteps': 510, #510 ps 
+    'md_timesteps': 210, #510 ps 
+    'equilibration_timesteps': 10, # 10 ps
+    'save': True, 
+    'save_interval': 2, # save every 2 ps
+    'checkpoint_simulations': False, 
+    'mixing': 'all'   #try exchange between neighbors only
+}
+
+sim_params_checkpoint ={
+    'n_attempts': 129, #n_replicas*log(n_replicas)
+    'md_timesteps': 210, #510 ps 
     'equilibration_timesteps': 10, # 10 ps
     'save': True, 
     'save_interval': 2, # save every 2 ps
     'checkpoint_simulations': True, 
-    'mixing': 'all'   #try exchange between all replicas
+    'mixing': 'all'   #try exchange between neighbors only
 }
-
 
 print('Simulation of 10 ns trajectory trying 129 exchange between all replicas for each timesteps and with rescale of velocities')
 print('-' * 50)
@@ -113,10 +122,16 @@ print('-' * 50)
 
 for step in range(10):   # 10 ns of production time 
     print(f'{step} ns of simulation')
-    position, forces, acceptance = parallel_tempering.run(2, **sim_params) # locally save position and forces every ns 
+    if step == 9:
+        # locally save position and forces every ns and consider checkpoint simulation
+        position, forces, acceptance = parallel_tempering.run(5, **sim_params_checkpoint) 
+    else:
+        # locally save position and forces every ns
+        position, forces, acceptance = parallel_tempering.run(5, **sim_params) 
     np.save(f'position_{step}.npy', position)
     np.save(f'forces_{step}.npy', forces)
     np.save(f'acceptance_{step}.npy', acceptance)
+    del position, forces, acceptance
 
     
 end = time.time()

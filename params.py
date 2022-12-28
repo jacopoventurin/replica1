@@ -8,7 +8,7 @@ from openmmtools import states, mcmc
 import openmmtools
 import os
 import os.path as osp
-from ReplicaExchangeProtocol import ReplicaExchange
+from ReplicaExchangeProtocol_last import ReplicaExchange
 
 
 if osp.exists('output-1.nc'): os.system('rm output-1.nc')

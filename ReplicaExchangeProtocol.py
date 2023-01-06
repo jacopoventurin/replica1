@@ -3,10 +3,10 @@ from openmmtools import cache
 import openmm.unit as unit
 import openmm as mm
 
-class ReplicaExchange:
 
+class ReplicaExchange:
     def __init__(
-        self, 
+        self,
         thermodynamic_states=None,
         sampler_states=None,
         mcmc_move=None,
@@ -16,6 +16,7 @@ class ReplicaExchange:
         self._replicas_sampler_states = sampler_states
         self._mcmc_move = mcmc_move
         self.n_replicas = len(thermodynamic_states)
+
         self._temperature_list = [self._thermodynamic_states[i].temperature for i in range(self.n_replicas)]
         self.rescale_velocities = rescale_velocities
 
@@ -51,6 +52,7 @@ class ReplicaExchange:
             if set to True a checkpoint configuration is saved every iteration.
         mixing:
             can be 'all' or 'neighbors'. If 'all' exchange between all possible replicas is attempted,
+
             while if 'neighbors' exchange between neighbors replicas only is attempted. If 'all' then 
             n_attempts should be at least n_replicas*log(n_replicas), where n_replicas is the total 
             number of replicas in the simulation. See https://aip.scitation.org/doi/10.1063/1.3660669
@@ -64,6 +66,7 @@ class ReplicaExchange:
         self.positions = []
         self.forces = []
         self.acceptance_matrix = np.zeros((self.n_replicas, self.n_replicas))
+
         if mixing == 'neighbors':
             self._define_neighbors()
         for iteration in range(n_iterations):
@@ -71,6 +74,7 @@ class ReplicaExchange:
             self._propagate_replicas(md_timesteps=md_timesteps, equilibration_timesteps=equilibration_timesteps, 
                                         save=save, save_interval=save_interval)
             ## Mix replicas
+
             self._mix_replicas(mixing=mixing, n_attempts=n_attempts)
 
             if checkpoint_simulations:
@@ -79,9 +83,9 @@ class ReplicaExchange:
         if save:
             ## Output in the format shape
             # replica, frames, n_atoms, xyz
-            positions = np.swapaxes(np.array(self.positions),0,1)
-            forces = np.swapaxes(np.array(self.forces),0,1)
-            return positions,forces,self.acceptance_matrix
+            positions = np.swapaxes(np.array(self.positions), 0, 1)
+            forces = np.swapaxes(np.array(self.forces), 0, 1)
+            return positions, forces, self.acceptance_matrix
         else:
             return self.acceptance_matrix
 
@@ -185,6 +189,7 @@ class ReplicaExchange:
             context.setVelocitiesToTemperature(thermo_state.temperature)
 
 
+
     def _define_neighbors(self):
         # Define all possible couples of neighbors
         l = np.arange(len(self._thermodynamic_states))
@@ -193,7 +198,6 @@ class ReplicaExchange:
             couples.append(i)
 
         self.couples = np.array(couples)
-
 
 
     def _compute_reduced_potential(self, sampler_state, thermo_state):
@@ -205,9 +209,13 @@ class ReplicaExchange:
         return thermo_state.reduced_potential(context)
 
     def _grab_forces(self):
-        forces = np.zeros((self.n_replicas,*self._replicas_sampler_states[0].positions.shape))
+        forces = np.zeros(
+            (self.n_replicas, *self._replicas_sampler_states[0].positions.shape)
+        )
         positions = np.zeros(forces.shape)
-        for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
+        for thermo_state, sampler_state in zip(
+            self._thermodynamic_states, self._replicas_sampler_states
+        ):
             context, _ = cache.global_context_cache.get_context(thermo_state)
             sampler_state.apply_to_context(context)
             #
@@ -215,25 +223,40 @@ class ReplicaExchange:
             position = context.getState(getPositions=True).getPositions(asNumpy=True)
             position = position.value_in_unit(unit.angstrom)
             force = context.getState(getForces=True).getForces(asNumpy=True)
-            force = force.value_in_unit(unit.kilocalorie_per_mole/unit.angstrom)
+            force = force.value_in_unit(unit.kilocalorie_per_mole / unit.angstrom)
             positions[i_t] = position
             forces[i_t] = force
         return positions, forces
 
     def _save_contexts(self):
-        for i_t,(thermo_state, sampler_state) in enumerate(zip(self._thermodynamic_states, self._replicas_sampler_states)):
+        for i_t, (thermo_state, sampler_state) in enumerate(
+            zip(self._thermodynamic_states, self._replicas_sampler_states)
+        ):
             context, _ = cache.global_context_cache.get_context(thermo_state)
             sampler_state.apply_to_context(context)
-            state = context.getState(getPositions=True, getVelocities=True, getParameters=True)
+            state = context.getState(
+                getPositions=True, getVelocities=True, getParameters=True
+            )
             state_xml = mm.XmlSerializer.serialize(state)
-            with open('checkpoint-{}.xml'.format(i_t), 'w') as output:
+            with open("checkpoint-{}.xml".format(i_t), "w") as output:
                 output.write(state_xml)
 
     def _load_contexts(self):
-        for i_t,(thermo_state, sampler_state) in enumerate(zip(self._thermodynamic_states, self._replicas_sampler_states)):
+        for i_t, (thermo_state, sampler_state) in enumerate(
+            zip(self._thermodynamic_states, self._replicas_sampler_states)
+        ):
             context, _ = cache.global_context_cache.get_context(thermo_state)
-            with open('checkpoint-{}.xml'.format(i_t), 'r') as input:
+            with open("checkpoint-{}.xml".format(i_t), "r") as input:
                 state = mm.XmlSerializer.deserialize(input.read())
                 sampler_state.positions = state.getPositions()
                 sampler_state.velocities = state.getVelocities()
             sampler_state.apply_to_context(context)
+
+    def _rescale_velocities(self):
+        '''
+            Rescale velocities to desired temperature from thermodynamic state after swap attempt
+        '''
+        for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
+            context, _ = cache.global_context_cache.get_context(thermo_state)
+            sampler_state.apply_to_context(context)
+            context.setVelocitiesToTemperature(thermo_state.temperature)

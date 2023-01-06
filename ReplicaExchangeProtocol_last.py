@@ -16,7 +16,7 @@ class ReplicaExchange:
         self._replicas_sampler_states = sampler_states
         self._mcmc_move = mcmc_move
         self.n_replicas = len(thermodynamic_states)
-        self._temperature_list = [self._thermodynamic_states[i].temperature for i in range(self.n_replicas)]
+        self._temperature_list = [state.temperature for state in self._thermodynamic_states]
         self.rescale_velocities = rescale_velocities
 
     def run(self, 
@@ -141,8 +141,8 @@ class ReplicaExchange:
 
             # Compute the energies.
             if self.energy_matrix is None:
-                sampler_state_i, sampler_state_j = (self._replicas_sampler_states[k] for k in [i, j])
-                thermo_state_i, thermo_state_j = (self._thermodynamic_states[k] for k in [i, j])
+                sampler_state_i, sampler_state_j = [self._replicas_sampler_states[k] for k in [i, j]]
+                thermo_state_i, thermo_state_j = [self._thermodynamic_states[k] for k in [i, j]]
                 energy_ii = self._compute_reduced_potential(sampler_state_i, thermo_state_i)
                 energy_jj = self._compute_reduced_potential(sampler_state_j, thermo_state_j)
                 energy_ij = self._compute_reduced_potential(sampler_state_i, thermo_state_j)

@@ -73,8 +73,8 @@ class ReplicaExchange:
             ## Mix replicas
             self._mix_replicas(mixing=mixing, n_attempts=n_attempts)
 
-            if checkpoint_simulations:
-                self._save_contexts()
+        if checkpoint_simulations:
+            self._save_contexts()
 
         if save:
             ## Output in the format shape

@@ -20,6 +20,7 @@ class ReplicaExchange:
         self._temperature_list = [self._thermodynamic_states[i].temperature for i in range(self.n_replicas)]
         self.rescale_velocities = rescale_velocities
         self._topology = None
+        self._dimension = None
 
     def run(self, 
             n_iterations:int = 1, 

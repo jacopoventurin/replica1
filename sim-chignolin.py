@@ -91,6 +91,9 @@ parallel_tempering = ReplicaExchange(
     rescale_velocities=True,
 )
 
+# Load topology in order to allow 
+parallel_tempering.load_topology(md.load_topology('chi_sys.pdb'))
+
 # Load state of the simulation from checkpoint 
 #parallel_tempering._load_contexts()
 
@@ -104,7 +107,8 @@ sim_params ={
     'save': True, 
     'save_interval': 3, # save every 3 ps
     'checkpoint_simulations': False, 
-    'mixing': 'all'   #try exchange between neighbors only
+    'mixing': 'all',   #try exchange between neighbors only
+    'save_atoms': 'protein'   #save position and forces of protein's atoms only 
 }
 
 sim_params_checkpoints ={
@@ -114,7 +118,8 @@ sim_params_checkpoints ={
     'save': True,
     'save_interval': 3,
     'checkpoint_simulations': True,
-    'mixing': 'all'
+    'mixing': 'all',
+    'save_atoms': 'protein'
 }
 
 

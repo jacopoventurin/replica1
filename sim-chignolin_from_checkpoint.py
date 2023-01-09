@@ -8,7 +8,8 @@ from openmmtools import states, mcmc
 import openmmtools
 import os
 import os.path as osp
-from ReplicaExchangeProtocol_last import ReplicaExchange
+from ReplicaExchangeProtocol import ReplicaExchange
+import time
 
 
 if osp.exists('output-1.nc'): os.system('rm output-1.nc')
@@ -86,29 +87,62 @@ langevin_move = mcmc.LangevinSplittingDynamicsMove(
 parallel_tempering = ReplicaExchange(
     thermodynamic_states=thermodynamic_states, 
     sampler_states=sampler_states, 
-    mcmc_move=langevin_move
+    mcmc_move=langevin_move,
+    rescale_velocities=True,
 )
+
+# Load state of the simulation from checkpoint 
+parallel_tempering._load_contexts()
 
 # Run symulation and save position and forces every 100 timesteps
 
 
 sim_params ={
-    'n_attempts': 1, 
-    'equilibration_timesteps': 100, # 100 ps
-    'production_timesteps': 500,  # 500 ps
+    'n_attempts': 129, #n_replicas*log(n_replicas)
+    'md_timesteps': 210, #210 ps 
+    'equilibration_timesteps': 10, # 10 ps
     'save': True, 
-    'save_interval': 2, # save every 2 ps
-    'checkpoint_simulations': True, 
-    'mixing': 'neighbors'   #try exchange between neighbors only
+    'save_interval': 3, # save every 3 ps
+    'checkpoint_simulations': False, 
+    'mixing': 'all'   #try exchange between neighbors only
 }
 
-position, forces, acceptance = parallel_tempering.run(200, **sim_params) # 100 ns of production time 
-np.save(f'position.npy', position)
-np.save(f'forces.npy', forces)
-np.save(f'acceptance.npy', acceptance)
+sim_params_checkpoints ={
+    'n_attempts': 129,
+    'md_timesteps': 210,
+    'equilibration_timesteps': 10,
+    'save': True,
+    'save_interval': 3,
+    'checkpoint_simulations': True,
+    'mixing': 'all'
+}
 
-    
-    
 
+
+print('Simulation of 20 ns trajectory trying 129 exchange between all replicas for each timesteps with rescale of velocities')
+print('-' * 50)
+start = time.time()
+print(f'Simulation started at time {start}')
+print('-' * 50)
+
+for step in range(10):   # 20 ns of production time 
+    if step == 9:
+        # locally save position and forces every 2 ns and save checkpoint state
+        position, forces, acceptance = parallel_tempering.run(10, **sim_params_checkpoints)
+    else:
+        # locally save position and forces every 2 ns
+        position, forces, acceptance = parallel_tempering.run(10, **sim_params)  
+    np.save(f'position_{step}.npy', position)
+    np.save(f'forces_{step}.npy', forces)
+    np.save(f'acceptance_{step}.npy', acceptance)
+    
+    del position
+    del forces
+    
+    print(f'{(step+1)*2} ns of simulation done')
+    
+end = time.time()
+print(f'Simulation ended at {end}')
+print(f'Total simulation time {end-start}')
 
 

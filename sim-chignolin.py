@@ -91,52 +91,62 @@ parallel_tempering = ReplicaExchange(
     rescale_velocities=True,
 )
 
+# Load topology in order to allow 
+parallel_tempering.load_topology(md.load_topology('chi_sys.pdb'))
+
+# Load state of the simulation from checkpoint 
+#parallel_tempering._load_contexts()
+
 # Run symulation and save position and forces every 100 timesteps
 
 
 sim_params ={
     'n_attempts': 129, #n_replicas*log(n_replicas)
-    'md_timesteps': 210, #510 ps 
+    'md_timesteps': 210, #210 ps 
     'equilibration_timesteps': 10, # 10 ps
     'save': True, 
-    'save_interval': 2, # save every 2 ps
+    'save_interval': 3, # save every 3 ps
     'checkpoint_simulations': False, 
-    'mixing': 'all'   #try exchange between neighbors only
+    'mixing': 'all',   #try exchange between neighbors only
+    'save_atoms': 'protein'   #save position and forces of protein's atoms only 
 }
 
-sim_params_checkpoint ={
-    'n_attempts': 129, #n_replicas*log(n_replicas)
-    'md_timesteps': 210, #510 ps 
-    'equilibration_timesteps': 10, # 10 ps
-    'save': True, 
-    'save_interval': 2, # save every 2 ps
-    'checkpoint_simulations': True, 
-    'mixing': 'all'   #try exchange between neighbors only
+sim_params_checkpoints ={
+    'n_attempts': 129,
+    'md_timesteps': 210,
+    'equilibration_timesteps': 10,
+    'save': True,
+    'save_interval': 3,
+    'checkpoint_simulations': True,
+    'mixing': 'all',
+    'save_atoms': 'protein'
 }
 
-print('Simulation of 10 ns trajectory trying 129 exchange between all replicas for each timesteps and with rescale of velocities')
+
+
+print('Simulation of 20 ns trajectory trying 129 exchange between all replicas for each timesteps with rescale of velocities')
 print('-' * 50)
 start = time.time()
 print(f'Simulation started at time {start}')
 print('-' * 50)
 
-for step in range(10):   # 10 ns of production time 
-    print(f'{step} ns of simulation')
+for step in range(10):   # 20 ns of production time 
+   
     if step == 9:
-        # locally save position and forces every ns and consider checkpoint simulation
-        position, forces, acceptance = parallel_tempering.run(5, **sim_params_checkpoint) 
+        # locally save position and forces every 2 ns and save checkpoint state
+        position, forces, acceptance = parallel_tempering.run(10, **sim_params_checkpoints)
     else:
-        # locally save position and forces every ns
-        position, forces, acceptance = parallel_tempering.run(5, **sim_params) 
+        # locally save position and forces every 2 ns
+        position, forces, acceptance = parallel_tempering.run(10, **sim_params)  
     np.save(f'position_{step}.npy', position)
     np.save(f'forces_{step}.npy', forces)
     np.save(f'acceptance_{step}.npy', acceptance)
-    del position, forces, acceptance
-
+    
+    del position
+    del forces
+    
+    print(f'{(step+1)*2} ns of simulation done')
     
 end = time.time()
 print(f'Simulation ended at {end}')
 print(f'Total simulation time {end-start}')
-
-
-

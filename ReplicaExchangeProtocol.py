@@ -1,4 +1,5 @@
 import numpy as np
+import mdtraj as md
 from openmmtools import cache
 import openmm.unit as unit
 import openmm as mm
@@ -18,6 +19,8 @@ class ReplicaExchange:
         self.n_replicas = len(thermodynamic_states)
         self._temperature_list = [self._thermodynamic_states[i].temperature for i in range(self.n_replicas)]
         self.rescale_velocities = rescale_velocities
+        self._topology = None
+        self._dimension = None
 
     def run(self, 
             n_iterations:int = 1, 
@@ -27,7 +30,8 @@ class ReplicaExchange:
             save:bool = False, 
             save_interval:int = 1, 
             checkpoint_simulations:bool = False, 
-            mixing:str = 'all'):
+            mixing:str = 'all',
+            save_atoms='all'):
         """
         Run a simulation with replica exchange protocol. Is possible to try exchange between 
         all replicas or just between neighbors.
@@ -55,6 +59,10 @@ class ReplicaExchange:
             n_attempts should be at least n_replicas*log(n_replicas), where n_replicas is the total 
             number of replicas in the simulation. See https://aip.scitation.org/doi/10.1063/1.3660669
             for more information.
+        save_atoms:
+            can be 'all' or any mdtraj compatible string. For example if set to 'all' positions and
+            forces of all toms in the system are saved, while if set to 'protein' positions and forces 
+            of protein's atoms only are saved.
 
         Return
         ------
@@ -69,7 +77,7 @@ class ReplicaExchange:
         for iteration in range(n_iterations):
             ## Propagate dynamics
             self._propagate_replicas(md_timesteps=md_timesteps, equilibration_timesteps=equilibration_timesteps, 
-                                        save=save, save_interval=save_interval)
+                                        save=save, save_interval=save_interval, save_atoms=save_atoms)
             ## Mix replicas
             self._mix_replicas(mixing=mixing, n_attempts=n_attempts)
 
@@ -85,16 +93,35 @@ class ReplicaExchange:
         else:
             return self.acceptance_matrix
 
+
+    def load_topology(self, topology: md.Topology):
+        """
+        This method allow to add topology object to the class.
+        Is necessary to specify a topology if only protein's atoms positions are saved during
+        the simulation.
+        """
+        if self._topology is None:
+            self._topology = topology
+        else:
+            raise AttributeError('Topology is already defined for this class')
+
+
+
     def _propagate_replicas(self, 
                             md_timesteps:int = 1, 
                             equilibration_timesteps:int = 0, 
                             save:bool = False, 
-                            save_interval:int = 1):
+                            save_interval:int = 1,
+                            save_atoms:str = 'all'
+                            ):
         """
         Apply _mcmc_move to all the replicas md_timesteps times. If equilibration_timesteps > 0,
         an equilibration phase is considered before try to save position and forces.
         If save is set to True position and forces are saved every save_interval time.
         _thermodynamic_state[i] is associated to the replica configuration in _replicas_sampler_states[i].
+        Is possible to set save_atoms to 'all' or any mdtraj compatible string 
+        in order to save a subset of position and forces only.
+
         """
         for md_step in range(md_timesteps):
             for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
@@ -103,7 +130,7 @@ class ReplicaExchange:
                     if save and (md_step % save_interval == 0):
                         self.positions.append([])
                         self.forces.append([])
-                        self.positions[-1], self.forces[-1] = self._grab_forces()
+                        self.positions[-1], self.forces[-1] = self._grab_forces(save_atoms=save_atoms)
 
 
     def _mix_replicas(self, mixing:str = 'all', n_attempts=1,):
@@ -204,17 +231,40 @@ class ReplicaExchange:
         sampler_state.apply_to_context(context)
         return thermo_state.reduced_potential(context)
 
-    def _grab_forces(self):
-        forces = np.zeros((self.n_replicas,*self._replicas_sampler_states[0].positions.shape))
+    def _grab_forces(self, save_atoms='all'):
+        """
+        If mode='all', position and forces of all atoms in the simulation are returned.
+        Alternatively mode can be setted to any mdtraj compatible statement in order to select a subset 
+        of elements in the topology, such as mode='protein.
+        """
+        if save_atoms == 'all':
+            target_elements = list(range(len(self._replicas_sampler_states[0].positions)))
+        else:
+            try:
+                target_elements = self._topology.select(save_atoms)
+            except:
+                if self._topology is None:
+                    print('Topology not loaded: need to be loaded using load_topology()')
+                else:
+                    print(f'Seems {save_atoms} is not compatible with mdtraj.topology.select()')
+                print('Position and forces of all the atoms are saved')
+                target_elements = list(range(len(self._replicas_sampler_states[0].positions)))           
+
+        # get the dymension of the space  
+        if self._dimension is None:
+            self._dimension = self._replicas_sampler_states[0].positions.shape[-1]
+
+
+        forces = np.zeros((self.n_replicas,len(target_elements), self._dimension))
         positions = np.zeros(forces.shape)
         for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
             context, _ = cache.global_context_cache.get_context(thermo_state)
             sampler_state.apply_to_context(context)
             #
             i_t = self._temperature_list.index(thermo_state.temperature)
-            position = context.getState(getPositions=True).getPositions(asNumpy=True)
+            position = context.getState(getPositions=True).getPositions(asNumpy=True)[target_elements]
             position = position.value_in_unit(unit.angstrom)
-            force = context.getState(getForces=True).getForces(asNumpy=True)
+            force = context.getState(getForces=True).getForces(asNumpy=True)[target_elements]
             force = force.value_in_unit(unit.kilocalorie_per_mole/unit.angstrom)
             positions[i_t] = position
             forces[i_t] = force

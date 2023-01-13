@@ -200,16 +200,6 @@ class ReplicaExchange:
         for i,thermo_state in enumerate(self._thermodynamic_states):
                 for j,sampler_state in enumerate(self._replicas_sampler_states):
                     self.energy_matrix[j,i] = self._compute_reduced_potential(sampler_state, thermo_state)
-        
-
-    def _rescale_velocities(self):
-        '''
-            Put velocities to desired temperature
-        '''
-        for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
-            context, _ = cache.global_context_cache.get_context(thermo_state)
-            sampler_state.apply_to_context(context)
-            context.setVelocitiesToTemperature(thermo_state.temperature)
 
 
     def _define_neighbors(self):
@@ -287,3 +277,17 @@ class ReplicaExchange:
                 sampler_state.positions = state.getPositions()
                 sampler_state.velocities = state.getVelocities()
             sampler_state.apply_to_context(context)
+
+
+    def _rescale_velocities(self,original_temperature=None):
+        '''
+            Rescale velocities to desired temperature from thermodynamic state after swap attempt
+        '''
+        for i_t,(thermo_state, sampler_state) in enumerate(zip(self._thermodynamic_states, self._replicas_sampler_states)):
+            context, _ = cache.global_context_cache.get_context(thermo_state)
+            sampler_state.apply_to_context(context)
+            if original_temperature is not None:
+                context.setVelocitiesToTemperature(np.sqrt(thermo_state.temperature/original_temperature[i_t]))
+                print(np.sqrt(thermo_state.temperature/original_temperature[i_t]))
+            else:
+                context.setVelocitiesToTemperature(thermo_state.temperature)

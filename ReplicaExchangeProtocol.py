@@ -2,7 +2,7 @@ import numpy as np
 from openmmtools import cache
 import openmm.unit as unit
 import openmm as mm
-
+import mpiplus
 
 class ReplicaExchange:
     def __init__(
@@ -100,15 +100,21 @@ class ReplicaExchange:
         If save is set to True position and forces are saved every save_interval time.
         _thermodynamic_state[i] is associated to the replica configuration in _replicas_sampler_states[i].
         """
+        import time
         for md_step in range(md_timesteps):
-            for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
-                self._mcmc_move.apply(thermo_state, sampler_state)
+            # for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
+            #     self._mcmc_move.apply(thermo_state, sampler_state)
+
+            mpiplus.distribute(self._run_replica, range(self.n_replicas), send_results_to=0)
+
             if md_step > equilibration_timesteps:
                     if save and (md_step % save_interval == 0):
                         self.positions.append([])
                         self.forces.append([])
                         self.positions[-1], self.forces[-1] = self._grab_forces()
 
+    def _run_replica(self, replica_id):
+        self._mcmc_move.apply(self._thermodynamic_states[replica_id], self._replicas_sampler_states[replica_id])
 
     def _mix_replicas(self, mixing:str = 'all', n_attempts=1,):
         """
@@ -254,6 +260,5 @@ class ReplicaExchange:
             sampler_state.apply_to_context(context)
             if original_temperature is not None:
                 context.setVelocitiesToTemperature(np.sqrt(thermo_state.temperature/original_temperature[i_t]))
-                print(np.sqrt(thermo_state.temperature/original_temperature[i_t]))
             else:
                 context.setVelocitiesToTemperature(thermo_state.temperature)

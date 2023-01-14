@@ -3,9 +3,10 @@ import mdtraj as md
 from openmmtools import cache
 import openmm.unit as unit
 import openmm as mm
+import mpiplus
+import time
 
 class ReplicaExchange:
-
     def __init__(
         self, 
         thermodynamic_states=None,
@@ -17,10 +18,11 @@ class ReplicaExchange:
         self._replicas_sampler_states = sampler_states
         self._mcmc_move = mcmc_move
         self.n_replicas = len(thermodynamic_states)
-        self._temperature_list = [self._thermodynamic_states[i].temperature for i in range(self.n_replicas)]
-        self.rescale_velocities = rescale_velocities
         self._topology = None
         self._dimension = None
+
+        self._temperature_list = [self._thermodynamic_states[i].temperature for i in range(self.n_replicas)]
+        self.rescale_velocities = rescale_velocities   
 
     def run(self, 
             n_iterations:int = 1, 
@@ -66,12 +68,13 @@ class ReplicaExchange:
 
         Return
         ------
-            If save is set to True then position, forces, acceptance_matrix are returned.
-            If save is set to False then acceptance_matrix only is returned
+            If save is set to True position, forces, acceptance_matrix are returned.
+            If save is set to False acceptance_matrix only is returned
         """
         self.positions = []
         self.forces = []
         self.acceptance_matrix = np.zeros((self.n_replicas, self.n_replicas))
+
         if mixing == 'neighbors':
             self._define_neighbors()
         for iteration in range(n_iterations):
@@ -87,9 +90,9 @@ class ReplicaExchange:
         if save:
             ## Output in the format shape
             # replica, frames, n_atoms, xyz
-            positions = np.swapaxes(np.array(self.positions),0,1)
-            forces = np.swapaxes(np.array(self.forces),0,1)
-            return positions,forces,self.acceptance_matrix
+            positions = np.swapaxes(np.array(self.positions), 0, 1)
+            forces = np.swapaxes(np.array(self.forces),0 , 1)
+            return positions, forces, self.acceptance_matrix
         else:
             return self.acceptance_matrix
 
@@ -124,8 +127,11 @@ class ReplicaExchange:
 
         """
         for md_step in range(md_timesteps):
-            for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
-                self._mcmc_move.apply(thermo_state, sampler_state)
+            # for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
+            #     self._mcmc_move.apply(thermo_state, sampler_state)
+
+            mpiplus.distribute(self._run_replica, range(self.n_replicas), send_results_to=0)
+
             if md_step > equilibration_timesteps:
                     if save and (md_step % save_interval == 0):
                         self.positions.append([])
@@ -133,6 +139,10 @@ class ReplicaExchange:
                         self.positions[-1], self.forces[-1] = self._grab_forces(save_atoms=save_atoms)
 
 
+    def _run_replica(self, replica_id):
+        self._mcmc_move.apply(self._thermodynamic_states[replica_id], self._replicas_sampler_states[replica_id])
+
+        
     def _mix_replicas(self, mixing:str = 'all', n_attempts=1,):
         """
         Mix replicas using two possible strategy: try to exchange two replicas randomly choosen 
@@ -157,6 +167,10 @@ class ReplicaExchange:
             self._compute_reduced_potential_matrix()
         else:
             self.energy_matrix = None
+
+        premix_temperatures = []
+        for i_t,thermo_state in enumerate(self._thermodynamic_states):
+            premix_temperatures.append(thermo_state.temperature)
 
         # Attempts to exchnge n_attempts times 
         for attempt in range(n_attempts):
@@ -191,7 +205,7 @@ class ReplicaExchange:
             
             # Reset velocities 
             if self.rescale_velocities == True:
-               self._rescale_velocities()
+               self._rescale_velocities(premix_temperatures)
 
 
     def _compute_reduced_potential_matrix(self):
@@ -200,16 +214,6 @@ class ReplicaExchange:
         for i,thermo_state in enumerate(self._thermodynamic_states):
                 for j,sampler_state in enumerate(self._replicas_sampler_states):
                     self.energy_matrix[j,i] = self._compute_reduced_potential(sampler_state, thermo_state)
-        
-
-    def _rescale_velocities(self):
-        '''
-            Put velocities to desired temperature
-        '''
-        for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
-            context, _ = cache.global_context_cache.get_context(thermo_state)
-            sampler_state.apply_to_context(context)
-            context.setVelocitiesToTemperature(thermo_state.temperature)
 
 
     def _define_neighbors(self):
@@ -220,7 +224,6 @@ class ReplicaExchange:
             couples.append(i)
 
         self.couples = np.array(couples)
-
 
 
     def _compute_reduced_potential(self, sampler_state, thermo_state):
@@ -287,3 +290,16 @@ class ReplicaExchange:
                 sampler_state.positions = state.getPositions()
                 sampler_state.velocities = state.getVelocities()
             sampler_state.apply_to_context(context)
+
+
+    def _rescale_velocities(self,original_temperature=None):
+        '''
+            Rescale velocities to desired temperature from thermodynamic state after swap attempt
+        '''
+        for i_t,(thermo_state, sampler_state) in enumerate(zip(self._thermodynamic_states, self._replicas_sampler_states)):
+            context, _ = cache.global_context_cache.get_context(thermo_state)
+            sampler_state.apply_to_context(context)
+            if original_temperature is not None:
+                context.setVelocitiesToTemperature(np.sqrt(thermo_state.temperature/original_temperature[i_t]))
+            else:
+                context.setVelocitiesToTemperature(thermo_state.temperature)

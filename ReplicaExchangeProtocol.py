@@ -4,7 +4,6 @@ from openmmtools import cache
 import openmm.unit as unit
 import openmm as mm
 import mpiplus
-import time
 
 class ReplicaExchange:
     def __init__(
@@ -19,7 +18,7 @@ class ReplicaExchange:
         self._mcmc_move = mcmc_move
         self.n_replicas = len(thermodynamic_states)
         self._topology = None
-        self._dimension = None
+        self.reporter = None
 
         self._temperature_list = [self._thermodynamic_states[i].temperature for i in range(self.n_replicas)]
         self.rescale_velocities = rescale_velocities   
@@ -74,13 +73,14 @@ class ReplicaExchange:
         self.positions = []
         self.forces = []
         self.acceptance_matrix = np.zeros((self.n_replicas, self.n_replicas))
+        self._define_target_elements_and_dimension(save_atoms)
 
         if mixing == 'neighbors':
             self._define_neighbors()
         for iteration in range(n_iterations):
             ## Propagate dynamics
             self._propagate_replicas(md_timesteps=md_timesteps, equilibration_timesteps=equilibration_timesteps, 
-                                        save=save, save_interval=save_interval, save_atoms=save_atoms)
+                                        save=save, save_interval=save_interval)
             ## Mix replicas
             self._mix_replicas(mixing=mixing, n_attempts=n_attempts)
 
@@ -108,6 +108,39 @@ class ReplicaExchange:
         else:
             raise AttributeError('Topology is already defined for this class')
 
+    
+    def load_reporter(self, reporter):
+        """
+        This method add a reporter object to the class, used to save some interesting variables 
+        during the simulation (e.g. temperature, total energy ...)
+        """
+        if self.reporter is None:
+            self.reporter = reporter
+        else:
+            raise AttributeError('Multiple reporters not jet supported for this class')
+
+
+    def _define_target_elements_and_dimension(self, save_atoms):
+        """
+        This method define target elements we whant to save during the simulation
+        and define dimension of the system.
+        """
+        if save_atoms == 'all':
+            self.target_elements = list(range(len(self._replicas_sampler_states[0].positions)))
+        else:
+            try:
+                self.target_elements = self._topology.select(save_atoms)
+            except:
+                if self._topology is None:
+                    print('Topology not loaded: need to be loaded using load_topology()')
+                else:
+                    print(f'Seems {save_atoms} is not compatible with mdtraj.topology.select()')
+                print('Position and forces of all the atoms are saved')
+                self.target_elements = list(range(len(self._replicas_sampler_states[0].positions)))           
+
+        # get the dymension of the space  
+        if self._dimension is None:
+            self._dimension = self._replicas_sampler_states[0].positions.shape[-1]
 
 
     def _propagate_replicas(self, 
@@ -115,16 +148,27 @@ class ReplicaExchange:
                             equilibration_timesteps:int = 0, 
                             save:bool = False, 
                             save_interval:int = 1,
-                            save_atoms:str = 'all'
+                            report_state:bool =False,
+                            report_interval:int = 1
                             ):
         """
         Apply _mcmc_move to all the replicas md_timesteps times. If equilibration_timesteps > 0,
         an equilibration phase is considered before try to save position and forces.
         If save is set to True position and forces are saved every save_interval time.
         _thermodynamic_state[i] is associated to the replica configuration in _replicas_sampler_states[i].
-        Is possible to set save_atoms to 'all' or any mdtraj compatible string 
-        in order to save a subset of position and forces only.
+        If reporter was loaded, reports is also saved.
 
+        Params:
+        -------
+        md_timesteps:
+            number of MD timesteps, menas how many times apply self.mcmc_move to each state
+        equilibration_timesteps:
+            number of timesteps for equilibration. During equilibration position, forces and 
+            state of the system are not saved
+        save:
+            if set to True position and forces are saved every save_interval timesteps
+        save_interval:
+            if save is set to True, position and forces are saved every save_interval timesteps 
         """
         for md_step in range(md_timesteps):
             # for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
@@ -132,11 +176,19 @@ class ReplicaExchange:
 
             mpiplus.distribute(self._run_replica, range(self.n_replicas), send_results_to=0)
 
+            # verify if reporter was loaded
+            if self.reporter is not None:
+                report_interval = self.reporter.get_report_interval()
+
             if md_step > equilibration_timesteps:
                     if save and (md_step % save_interval == 0):
                         self.positions.append([])
                         self.forces.append([])
-                        self.positions[-1], self.forces[-1] = self._grab_forces(save_atoms=save_atoms)
+                        self.positions[-1], self.forces[-1] = self._grab_forces()
+                    if self.reporter is not None:
+                        if (md_step % report_interval) == 0:
+                            self.reporter.report(self._thermodynamic_states, self._replicas_sampler_states)
+                    
 
 
     def _run_replica(self, replica_id):
@@ -234,40 +286,20 @@ class ReplicaExchange:
         sampler_state.apply_to_context(context)
         return thermo_state.reduced_potential(context)
 
-    def _grab_forces(self, save_atoms='all'):
+    def _grab_forces(self):
         """
-        If mode='all', position and forces of all atoms in the simulation are returned.
-        Alternatively mode can be setted to any mdtraj compatible statement in order to select a subset 
-        of elements in the topology, such as mode='protein.
+        Return position and forces of the target elements as np.array
         """
-        if save_atoms == 'all':
-            target_elements = list(range(len(self._replicas_sampler_states[0].positions)))
-        else:
-            try:
-                target_elements = self._topology.select(save_atoms)
-            except:
-                if self._topology is None:
-                    print('Topology not loaded: need to be loaded using load_topology()')
-                else:
-                    print(f'Seems {save_atoms} is not compatible with mdtraj.topology.select()')
-                print('Position and forces of all the atoms are saved')
-                target_elements = list(range(len(self._replicas_sampler_states[0].positions)))           
-
-        # get the dymension of the space  
-        if self._dimension is None:
-            self._dimension = self._replicas_sampler_states[0].positions.shape[-1]
-
-
-        forces = np.zeros((self.n_replicas,len(target_elements), self._dimension))
+        forces = np.zeros((self.n_replicas,len(self.target_elements), self._dimension))
         positions = np.zeros(forces.shape)
         for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
             context, _ = cache.global_context_cache.get_context(thermo_state)
             sampler_state.apply_to_context(context)
             #
             i_t = self._temperature_list.index(thermo_state.temperature)
-            position = context.getState(getPositions=True).getPositions(asNumpy=True)[target_elements]
+            position = context.getState(getPositions=True).getPositions(asNumpy=True)[self.target_elements]
             position = position.value_in_unit(unit.angstrom)
-            force = context.getState(getForces=True).getForces(asNumpy=True)[target_elements]
+            force = context.getState(getForces=True).getForces(asNumpy=True)[self.target_elements]
             force = force.value_in_unit(unit.kilocalorie_per_mole/unit.angstrom)
             positions[i_t] = position
             forces[i_t] = force

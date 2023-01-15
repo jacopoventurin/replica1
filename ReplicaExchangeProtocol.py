@@ -12,7 +12,25 @@ class ReplicaExchange:
         sampler_states=None,
         mcmc_move=None,
         rescale_velocities=False,
+        save_temperatures_history=False
     ):
+        """
+        Class to perform Replica Exchange simulation.
+
+        Parameters:
+        ----------
+        thermodynamic_states:
+
+        sampler_states:
+        
+        mcmc_move:
+
+        rescale_velocities:
+            if set to True velocities are rescaled after every attempt to exchange replicas.
+        save_temperatures_history:
+            if set to True the history of exchnage is saved in a format (n_iteration, n_replicas).
+            The history can be obtained by get_temperature_history() method.
+        """
         self._thermodynamic_states = thermodynamic_states
         self._replicas_sampler_states = sampler_states
         self._mcmc_move = mcmc_move
@@ -21,7 +39,13 @@ class ReplicaExchange:
         self.reporter = None
 
         self._temperature_list = [self._thermodynamic_states[i].temperature for i in range(self.n_replicas)]
-        self.rescale_velocities = rescale_velocities   
+        self.rescale_velocities = rescale_velocities
+        if save_temperatures_history: 
+            self._temperature_history = []
+            temperature = [self._thermodynamic_states[i].temperature.value_in_unit(unit.kelvin) for i in range(self.n_replicas)]
+            self._temperature_history.append(temperature)
+        else:
+            self._temperature_history = None   
 
     def run(self, 
             n_iterations:int = 1, 
@@ -118,6 +142,18 @@ class ReplicaExchange:
             self.reporter = reporter
         else:
             raise AttributeError('Multiple reporters not jet supported for this class')
+    
+    def get_temperature_history(self, asNpy:bool = True):
+        """
+        Return temperature history with shape
+        (n_iteration, n_replicas), where n_iterations is the number of 
+        iterations specified in run.
+        If asNpy is set to True temperature history is returned as npy array
+        """
+        if asNpy:
+            return np.array(self._temperature_history)
+        else:
+            return self._temperature_history
 
 
     def _define_target_elements_and_dimension(self, save_atoms):
@@ -223,6 +259,7 @@ class ReplicaExchange:
         premix_temperatures = []
         for i_t,thermo_state in enumerate(self._thermodynamic_states):
             premix_temperatures.append(thermo_state.temperature)
+        
 
         # Attempts to exchnge n_attempts times 
         for attempt in range(n_attempts):
@@ -253,8 +290,13 @@ class ReplicaExchange:
                 if self.energy_matrix is not None:
                     # Swap i and j row in reduced_potential_matrix
                     self.energy_matrix[[i, j]] = self.energy_matrix[[j, i]]
-                
-            
+
+            # Update temperature history after swap
+            if self._temperature_history is not None:
+                temperatures = [self._thermodynamic_states[i].temperature.value_in_unit(unit.kelvin) for i in range(self.n_replicas)]
+                self._temperature_history.append(temperatures)
+    
+
             # Reset velocities 
             if self.rescale_velocities == True:
                self._rescale_velocities(premix_temperatures)

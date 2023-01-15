@@ -9,6 +9,7 @@ import openmmtools
 import os
 import os.path as osp
 from ReplicaExchangeProtocol import ReplicaExchange
+from Reporters import ReplicaStateReporter
 import time
 
 
@@ -93,6 +94,12 @@ parallel_tempering = ReplicaExchange(
 
 # Load topology in order to allow 
 parallel_tempering.load_topology(md.load_topology('chi_sys.pdb'))
+
+# Define and load reporter 
+reporter = ReplicaStateReporter('state.csv', reportInterval=20, time=True, potentialEnergy=True,
+                                kineticEnergy=True, totalEnergy=True, volume=True, elapsedTime=True)
+
+parallel_tempering.load_reporter(reporter)
 
 # Load state of the simulation from checkpoint 
 #parallel_tempering._load_contexts()

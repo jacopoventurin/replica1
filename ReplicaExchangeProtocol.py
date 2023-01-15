@@ -20,11 +20,14 @@ class ReplicaExchange:
         Parameters:
         ----------
         thermodynamic_states:
-
+            should be a list of openmmtools.states.ThermodynamicState representing different 
+            contexts of the simulation that doesn't changes during the integration. The full
+            list can be obtained using openmmtools.states.create_thermodynamic_state_protocol
         sampler_states:
-        
+            should be a list of openmmtools.states.SamplerState representing different portion of 
+            the system that changes during the integration.
         mcmc_move:
-
+            should be openmmtools compatible move (e.g. openmmtools.mcmc.LangevinSplittingDynamicsMove)
         rescale_velocities:
             if set to True velocities are rescaled after every attempt to exchange replicas.
         save_temperatures_history:

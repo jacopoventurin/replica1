@@ -153,6 +153,9 @@ for step in range(10):   # 20 ns of production time
     del forces
     
     print(f'{(step+1)*2} ns of simulation done')
+
+temperature_history = parallel_tempering.get_temperature_history(asNpy=True)
+np.save('temperature_history', temperature_history)
     
 end = time.time()
 print(f'Simulation ended at {end}')

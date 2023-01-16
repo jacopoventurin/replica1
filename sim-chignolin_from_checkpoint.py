@@ -102,10 +102,10 @@ parallel_tempering._load_contexts()
 
 sim_params ={
     'n_attempts': 129, #n_replicas*log(n_replicas)
-    'md_timesteps': 210, #210 ps 
-    'equilibration_timesteps': 10, # 10 ps
+    'md_timesteps': 600, #600 ps 
+    'equilibration_timesteps': 100, # 10 ps
     'save': True, 
-    'save_interval': 3, # save every 3 ps
+    'save_interval': 2, # save every 2 ps
     'checkpoint_simulations': False, 
     'mixing': 'all',   #try exchange between neighbors only
     'save_atoms': 'protein'   #save position and forces of protein's atoms only 
@@ -113,10 +113,10 @@ sim_params ={
 
 sim_params_checkpoints ={
     'n_attempts': 129,
-    'md_timesteps': 210,
-    'equilibration_timesteps': 10,
+    'md_timesteps': 600,
+    'equilibration_timesteps': 100,
     'save': True,
-    'save_interval': 3,
+    'save_interval': 2,
     'checkpoint_simulations': True,
     'mixing': 'all',
     'save_atoms': 'protein'
@@ -132,10 +132,10 @@ print('-' * 50)
 for step in range(10):   # 20 ns of production time 
     if step == 9:
         # locally save position and forces every 2 ns and save checkpoint state
-        position, forces, acceptance = parallel_tempering.run(10, **sim_params_checkpoints)
+        position, forces, acceptance = parallel_tempering.run(2, **sim_params_checkpoints)
     else:
         # locally save position and forces every 2 ns
-        position, forces, acceptance = parallel_tempering.run(10, **sim_params)  
+        position, forces, acceptance = parallel_tempering.run(2, **sim_params)  
     np.save(f'position_{step}.npy', position)
     np.save(f'forces_{step}.npy', forces)
     np.save(f'acceptance_{step}.npy', acceptance)

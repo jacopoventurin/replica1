@@ -1,6 +1,6 @@
 #!/bin/bash
 
-#SBATCH --job-name=Test2
+#SBATCH --job-name=Simulation_0-50ns
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=42G
@@ -28,4 +28,4 @@ conda activate mdsimulations
 # Run program
 cd /scratch/jacopo/trans_temp/example_test/replica1/
 
-python sim-chignolin.py
+python -u sim-chignolin.py > replica.oput

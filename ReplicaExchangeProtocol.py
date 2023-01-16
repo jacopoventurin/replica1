@@ -7,12 +7,13 @@ import mpiplus
 
 class ReplicaExchange:
     def __init__(
-        self, 
+        self,
         thermodynamic_states=None,
         sampler_states=None,
         mcmc_move=None,
         rescale_velocities=False,
         save_temperatures_history=False
+
     ):
         """
         Class to perform Replica Exchange simulation.
@@ -38,6 +39,7 @@ class ReplicaExchange:
         self._replicas_sampler_states = sampler_states
         self._mcmc_move = mcmc_move
         self.n_replicas = len(thermodynamic_states)
+
         self._topology = None
         self._dimension = None
         self._reporter = None
@@ -266,7 +268,6 @@ class ReplicaExchange:
             # verify if reporter was loaded
             if self._reporter is not None:
                 report_interval = self._reporter.get_report_interval()
-
             if md_step > equilibration_timesteps:
                     if save and (md_step % save_interval == 0):
                         self.positions.append([])
@@ -277,10 +278,9 @@ class ReplicaExchange:
                             self._reporter.report(self._thermodynamic_states, self._replicas_sampler_states)
                     
 
-
     def _run_replica(self, replica_id):
         self._mcmc_move.apply(self._thermodynamic_states[replica_id], self._replicas_sampler_states[replica_id])
-
+        
         
     def _mix_replicas(self, mixing:str = 'all', n_attempts=1,):
         """
@@ -385,7 +385,9 @@ class ReplicaExchange:
         """
         forces = np.zeros((self.n_replicas,len(self.target_elements), self._dimension))
         positions = np.zeros(forces.shape)
-        for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
+        for thermo_state, sampler_state in zip(
+            self._thermodynamic_states, self._replicas_sampler_states
+        ):
             context, _ = cache.global_context_cache.get_context(thermo_state)
             sampler_state.apply_to_context(context)
             #
@@ -399,18 +401,24 @@ class ReplicaExchange:
         return positions, forces
 
     def _save_contexts(self):
-        for i_t,(thermo_state, sampler_state) in enumerate(zip(self._thermodynamic_states, self._replicas_sampler_states)):
+        for i_t, (thermo_state, sampler_state) in enumerate(
+            zip(self._thermodynamic_states, self._replicas_sampler_states)
+        ):
             context, _ = cache.global_context_cache.get_context(thermo_state)
             sampler_state.apply_to_context(context)
-            state = context.getState(getPositions=True, getVelocities=True, getParameters=True)
+            state = context.getState(
+                getPositions=True, getVelocities=True, getParameters=True
+            )
             state_xml = mm.XmlSerializer.serialize(state)
-            with open('checkpoint-{}.xml'.format(i_t), 'w') as output:
+            with open("checkpoint-{}.xml".format(i_t), "w") as output:
                 output.write(state_xml)
 
     def _load_contexts(self):
-        for i_t,(thermo_state, sampler_state) in enumerate(zip(self._thermodynamic_states, self._replicas_sampler_states)):
+        for i_t, (thermo_state, sampler_state) in enumerate(
+            zip(self._thermodynamic_states, self._replicas_sampler_states)
+        ):
             context, _ = cache.global_context_cache.get_context(thermo_state)
-            with open('checkpoint-{}.xml'.format(i_t), 'r') as input:
+            with open("checkpoint-{}.xml".format(i_t), "r") as input:
                 state = mm.XmlSerializer.deserialize(input.read())
                 sampler_state.positions = state.getPositions()
                 sampler_state.velocities = state.getVelocities()

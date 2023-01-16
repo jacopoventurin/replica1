@@ -115,7 +115,8 @@ sim_params ={
     'save_interval': 3, # save every 3 ps
     'checkpoint_simulations': False, 
     'mixing': 'all',   #try exchange between neighbors only
-    'save_atoms': 'protein'   #save position and forces of protein's atoms only 
+    'save_atoms': 'protein',   #save position and forces of protein's atoms only 
+    'reshape_for_TICA': 'True'  #save in format for TICA analysis
 }
 
 

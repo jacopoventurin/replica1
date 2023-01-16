@@ -60,7 +60,8 @@ class ReplicaExchange:
             save_interval:int = 1, 
             checkpoint_simulations:bool = False, 
             mixing:str = 'all',
-            save_atoms='all'):
+            save_atoms:str = 'all',
+            reshape_for_TICA:bool = False):
         """
         Run a simulation with replica exchange protocol. Is possible to try exchange between 
         all replicas or just between neighbors.
@@ -92,6 +93,11 @@ class ReplicaExchange:
             can be 'all' or any mdtraj compatible string. For example if set to 'all' positions and
             forces of all toms in the system are saved, while if set to 'protein' positions and forces 
             of protein's atoms only are saved.
+        reshape_for_TICA:
+            if set to True position and forces are returned with shape 
+            (n_iteration, n_replicas, md_timesteps-equilibration_timesteps)/save_interval, any, 3),
+            else (n_replicas, n_iteration*(md_timesteps-equilibration_timesteps)/save_interval, any, 3)
+            is returned. Default is False
 
         Return
         ------
@@ -120,7 +126,12 @@ class ReplicaExchange:
             # replica, frames, n_atoms, xyz
             positions = np.swapaxes(np.array(self.positions), 0, 1)
             forces = np.swapaxes(np.array(self.forces),0 , 1)
-            return positions, forces, self.acceptance_matrix
+            if reshape_for_TICA:
+                positions_list = np.split(positions, n_iterations, axis=1)
+                forces_list = np.split(forces, n_iterations, axis=1)
+                return positions_list, forces_list, self.acceptance_matrix
+            else:    
+                return positions, forces, self.acceptance_matrix
         else:
             return self.acceptance_matrix
 

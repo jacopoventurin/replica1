@@ -4,25 +4,54 @@ from openmmtools import cache
 import openmm.unit as unit
 import openmm as mm
 import mpiplus
-import time
 
 class ReplicaExchange:
     def __init__(
-        self, 
+        self,
         thermodynamic_states=None,
         sampler_states=None,
         mcmc_move=None,
         rescale_velocities=False,
+        save_temperatures_history=False
+
     ):
+        """
+        Class to perform Replica Exchange simulation.
+
+        Parameters:
+        ----------
+        thermodynamic_states:
+            should be a list of openmmtools.states.ThermodynamicState representing different 
+            contexts of the simulation that doesn't changes during the integration. The full
+            list can be obtained using openmmtools.states.create_thermodynamic_state_protocol
+        sampler_states:
+            should be a list of openmmtools.states.SamplerState representing different portion of 
+            the system that changes during the integration.
+        mcmc_move:
+            should be openmmtools compatible move (e.g. openmmtools.mcmc.LangevinSplittingDynamicsMove)
+        rescale_velocities:
+            if set to True velocities are rescaled after every attempt to exchange replicas.
+        save_temperatures_history:
+            if set to True the history of exchnage is saved in a format (n_iteration, n_replicas).
+            The history can be obtained by get_temperature_history() method.
+        """
         self._thermodynamic_states = thermodynamic_states
         self._replicas_sampler_states = sampler_states
         self._mcmc_move = mcmc_move
         self.n_replicas = len(thermodynamic_states)
+
         self._topology = None
         self._dimension = None
+        self._reporter = None
 
         self._temperature_list = [self._thermodynamic_states[i].temperature for i in range(self.n_replicas)]
-        self.rescale_velocities = rescale_velocities   
+        self.rescale_velocities = rescale_velocities
+        if save_temperatures_history: 
+            self._temperature_history = []
+            temperature = [self._thermodynamic_states[i].temperature.value_in_unit(unit.kelvin) for i in range(self.n_replicas)]
+            self._temperature_history.append(temperature)
+        else:
+            self._temperature_history = None   
 
     def run(self, 
             n_iterations:int = 1, 
@@ -33,7 +62,8 @@ class ReplicaExchange:
             save_interval:int = 1, 
             checkpoint_simulations:bool = False, 
             mixing:str = 'all',
-            save_atoms='all'):
+            save_atoms:str = 'all',
+            reshape_for_TICA:bool = False):
         """
         Run a simulation with replica exchange protocol. Is possible to try exchange between 
         all replicas or just between neighbors.
@@ -65,6 +95,11 @@ class ReplicaExchange:
             can be 'all' or any mdtraj compatible string. For example if set to 'all' positions and
             forces of all toms in the system are saved, while if set to 'protein' positions and forces 
             of protein's atoms only are saved.
+        reshape_for_TICA:
+            if set to True position and forces are returned with shape 
+            (n_iteration, n_replicas, md_timesteps-equilibration_timesteps)/save_interval, any, 3),
+            else (n_replicas, n_iteration*(md_timesteps-equilibration_timesteps)/save_interval, any, 3)
+            is returned. Default is False
 
         Return
         ------
@@ -74,13 +109,14 @@ class ReplicaExchange:
         self.positions = []
         self.forces = []
         self.acceptance_matrix = np.zeros((self.n_replicas, self.n_replicas))
+        self._define_target_elements_and_dimension(save_atoms)
 
         if mixing == 'neighbors':
             self._define_neighbors()
         for iteration in range(n_iterations):
             ## Propagate dynamics
             self._propagate_replicas(md_timesteps=md_timesteps, equilibration_timesteps=equilibration_timesteps, 
-                                        save=save, save_interval=save_interval, save_atoms=save_atoms)
+                                        save=save, save_interval=save_interval)
             ## Mix replicas
             self._mix_replicas(mixing=mixing, n_attempts=n_attempts)
 
@@ -92,7 +128,12 @@ class ReplicaExchange:
             # replica, frames, n_atoms, xyz
             positions = np.swapaxes(np.array(self.positions), 0, 1)
             forces = np.swapaxes(np.array(self.forces),0 , 1)
-            return positions, forces, self.acceptance_matrix
+            if reshape_for_TICA:
+                positions_list = np.split(positions, n_iterations, axis=1)
+                forces_list = np.split(forces, n_iterations, axis=1)
+                return positions_list, forces_list, self.acceptance_matrix
+            else:    
+                return positions, forces, self.acceptance_matrix
         else:
             return self.acceptance_matrix
 
@@ -108,23 +149,115 @@ class ReplicaExchange:
         else:
             raise AttributeError('Topology is already defined for this class')
 
+    
+    def load_reporter(self, reporter):
+        """
+        This method add a reporter object to the class, used to save some interesting variables 
+        during the simulation (e.g. temperature, total energy ...)
+        """
+        if self._reporter is None:
+            self._reporter = reporter
+        else:
+            raise AttributeError('Multiple reporters not jet supported for this class')
+    
+    def get_temperature_history(self, asNpy:bool = True):
+        """
+        Return temperature history with shape
+        (n_iteration, n_replicas), where n_iterations is the number of 
+        iterations specified in run.
+        If asNpy is set to True temperature history is returned as npy array
+        """
+        if asNpy:
+            return np.array(self._temperature_history)
+        else:
+            return self._temperature_history
+    
+
+    def save_checkpoint(self, code:str = None):
+        """
+        Save checkpoint in n_replicas number of file of the form 
+        {code}_checkpoint-{idx}.xml, where idx is the index of a specific replica.
+        If code is not specified the output files are of the form checkpoint-{idx}.xml
+        """
+        if code == None:
+            checkpoint_string = 'checkpoint'
+        else:
+            checkpoint_string = f'{code}_checkpoint'
+
+        for i_t,(thermo_state, sampler_state) in enumerate(zip(self._thermodynamic_states, self._replicas_sampler_states)):
+            context, _ = cache.global_context_cache.get_context(thermo_state)
+            sampler_state.apply_to_context(context)
+            state = context.getState(getPositions=True, getVelocities=True, getParameters=True)
+            state_xml = mm.XmlSerializer.serialize(state)
+            with open(f'{checkpoint_string}-{i_t}.xml', 'w') as output:
+                output.write(state_xml)
+
+    def load_context_from_checkpoint(self, code:str = None):
+        """
+        Load context from a checkpoint files of the form {code}_checkpoint-{idx}.xml
+        If code is None then context is loaded from checkpoint-{idx}.xml
+        """
+        if code == None:
+            checkpoint_string = 'checkpoint'
+        else:
+            checkpoint_string = f'{code}_checkpoint'
+
+        for i_t,(thermo_state, sampler_state) in enumerate(zip(self._thermodynamic_states, self._replicas_sampler_states)):
+            context, _ = cache.global_context_cache.get_context(thermo_state)
+            with open(f'{checkpoint_string}-{i_t}.xml', 'r') as input:
+                state = mm.XmlSerializer.deserialize(input.read())
+                sampler_state.positions = state.getPositions()
+                sampler_state.velocities = state.getVelocities()
+            sampler_state.apply_to_context(context)
+
+
+    def _define_target_elements_and_dimension(self, save_atoms):
+        """
+        This method define target elements we whant to save during the simulation
+        and define dimension of the system.
+        """
+        if save_atoms == 'all':
+            self.target_elements = list(range(len(self._replicas_sampler_states[0].positions)))
+        else:
+            try:
+                self.target_elements = self._topology.select(save_atoms)
+            except:
+                if self._topology is None:
+                    print('Topology not loaded: need to be loaded using load_topology()')
+                else:
+                    print(f'Seems {save_atoms} is not compatible with mdtraj.topology.select()')
+                print('Position and forces of all the atoms are saved')
+                self.target_elements = list(range(len(self._replicas_sampler_states[0].positions)))           
+
+        # get the dymension of the space  
+        if self._dimension is None:
+            self._dimension = self._replicas_sampler_states[0].positions.shape[-1]
 
 
     def _propagate_replicas(self, 
                             md_timesteps:int = 1, 
                             equilibration_timesteps:int = 0, 
                             save:bool = False, 
-                            save_interval:int = 1,
-                            save_atoms:str = 'all'
+                            save_interval:int = 1
                             ):
         """
         Apply _mcmc_move to all the replicas md_timesteps times. If equilibration_timesteps > 0,
         an equilibration phase is considered before try to save position and forces.
         If save is set to True position and forces are saved every save_interval time.
         _thermodynamic_state[i] is associated to the replica configuration in _replicas_sampler_states[i].
-        Is possible to set save_atoms to 'all' or any mdtraj compatible string 
-        in order to save a subset of position and forces only.
+        If reporter was loaded, reports is also saved.
 
+        Params:
+        -------
+        md_timesteps:
+            number of MD timesteps, menas how many times apply self.mcmc_move to each state
+        equilibration_timesteps:
+            number of timesteps for equilibration. During equilibration position, forces and 
+            state of the system are not saved
+        save:
+            if set to True position and forces are saved every save_interval timesteps
+        save_interval:
+            if save is set to True, position and forces are saved every save_interval timesteps 
         """
         for md_step in range(md_timesteps):
             # for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
@@ -132,16 +265,22 @@ class ReplicaExchange:
 
             mpiplus.distribute(self._run_replica, range(self.n_replicas), send_results_to=0)
 
+            # verify if reporter was loaded
+            if self._reporter is not None:
+                report_interval = self._reporter.get_report_interval()
             if md_step > equilibration_timesteps:
                     if save and (md_step % save_interval == 0):
                         self.positions.append([])
                         self.forces.append([])
-                        self.positions[-1], self.forces[-1] = self._grab_forces(save_atoms=save_atoms)
-
+                        self.positions[-1], self.forces[-1] = self._grab_forces()
+                    if self._reporter is not None:
+                        if (md_step % report_interval) == 0:
+                            self._reporter.report(self._thermodynamic_states, self._replicas_sampler_states)
+                    
 
     def _run_replica(self, replica_id):
         self._mcmc_move.apply(self._thermodynamic_states[replica_id], self._replicas_sampler_states[replica_id])
-
+        
         
     def _mix_replicas(self, mixing:str = 'all', n_attempts=1,):
         """
@@ -171,6 +310,7 @@ class ReplicaExchange:
         premix_temperatures = []
         for i_t,thermo_state in enumerate(self._thermodynamic_states):
             premix_temperatures.append(thermo_state.temperature)
+        
 
         # Attempts to exchnge n_attempts times 
         for attempt in range(n_attempts):
@@ -201,8 +341,13 @@ class ReplicaExchange:
                 if self.energy_matrix is not None:
                     # Swap i and j row in reduced_potential_matrix
                     self.energy_matrix[[i, j]] = self.energy_matrix[[j, i]]
-                
-            
+
+            # Update temperature history after swap
+            if self._temperature_history is not None:
+                temperatures = [self._thermodynamic_states[i].temperature.value_in_unit(unit.kelvin) for i in range(self.n_replicas)]
+                self._temperature_history.append(temperatures)
+    
+
             # Reset velocities 
             if self.rescale_velocities == True:
                self._rescale_velocities(premix_temperatures)
@@ -234,58 +379,46 @@ class ReplicaExchange:
         sampler_state.apply_to_context(context)
         return thermo_state.reduced_potential(context)
 
-    def _grab_forces(self, save_atoms='all'):
+    def _grab_forces(self):
         """
-        If mode='all', position and forces of all atoms in the simulation are returned.
-        Alternatively mode can be setted to any mdtraj compatible statement in order to select a subset 
-        of elements in the topology, such as mode='protein.
+        Return position and forces of the target elements as np.array
         """
-        if save_atoms == 'all':
-            target_elements = list(range(len(self._replicas_sampler_states[0].positions)))
-        else:
-            try:
-                target_elements = self._topology.select(save_atoms)
-            except:
-                if self._topology is None:
-                    print('Topology not loaded: need to be loaded using load_topology()')
-                else:
-                    print(f'Seems {save_atoms} is not compatible with mdtraj.topology.select()')
-                print('Position and forces of all the atoms are saved')
-                target_elements = list(range(len(self._replicas_sampler_states[0].positions)))           
-
-        # get the dymension of the space  
-        if self._dimension is None:
-            self._dimension = self._replicas_sampler_states[0].positions.shape[-1]
-
-
-        forces = np.zeros((self.n_replicas,len(target_elements), self._dimension))
+        forces = np.zeros((self.n_replicas,len(self.target_elements), self._dimension))
         positions = np.zeros(forces.shape)
-        for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
+        for thermo_state, sampler_state in zip(
+            self._thermodynamic_states, self._replicas_sampler_states
+        ):
             context, _ = cache.global_context_cache.get_context(thermo_state)
             sampler_state.apply_to_context(context)
             #
             i_t = self._temperature_list.index(thermo_state.temperature)
-            position = context.getState(getPositions=True).getPositions(asNumpy=True)[target_elements]
+            position = context.getState(getPositions=True).getPositions(asNumpy=True)[self.target_elements]
             position = position.value_in_unit(unit.angstrom)
-            force = context.getState(getForces=True).getForces(asNumpy=True)[target_elements]
+            force = context.getState(getForces=True).getForces(asNumpy=True)[self.target_elements]
             force = force.value_in_unit(unit.kilocalorie_per_mole/unit.angstrom)
             positions[i_t] = position
             forces[i_t] = force
         return positions, forces
 
     def _save_contexts(self):
-        for i_t,(thermo_state, sampler_state) in enumerate(zip(self._thermodynamic_states, self._replicas_sampler_states)):
+        for i_t, (thermo_state, sampler_state) in enumerate(
+            zip(self._thermodynamic_states, self._replicas_sampler_states)
+        ):
             context, _ = cache.global_context_cache.get_context(thermo_state)
             sampler_state.apply_to_context(context)
-            state = context.getState(getPositions=True, getVelocities=True, getParameters=True)
+            state = context.getState(
+                getPositions=True, getVelocities=True, getParameters=True
+            )
             state_xml = mm.XmlSerializer.serialize(state)
-            with open('checkpoint-{}.xml'.format(i_t), 'w') as output:
+            with open("checkpoint-{}.xml".format(i_t), "w") as output:
                 output.write(state_xml)
 
     def _load_contexts(self):
-        for i_t,(thermo_state, sampler_state) in enumerate(zip(self._thermodynamic_states, self._replicas_sampler_states)):
+        for i_t, (thermo_state, sampler_state) in enumerate(
+            zip(self._thermodynamic_states, self._replicas_sampler_states)
+        ):
             context, _ = cache.global_context_cache.get_context(thermo_state)
-            with open('checkpoint-{}.xml'.format(i_t), 'r') as input:
+            with open("checkpoint-{}.xml".format(i_t), "r") as input:
                 state = mm.XmlSerializer.deserialize(input.read())
                 sampler_state.positions = state.getPositions()
                 sampler_state.velocities = state.getVelocities()
@@ -300,6 +433,6 @@ class ReplicaExchange:
             context, _ = cache.global_context_cache.get_context(thermo_state)
             sampler_state.apply_to_context(context)
             if original_temperature is not None:
-                context.setVelocitiesToTemperature(np.sqrt(thermo_state.temperature/original_temperature[i_t]))
+                context.setVelocities(context.getState(getVelocities=True).getVelocities()*np.sqrt(thermo_state.temperature/original_temperature[i_t]))
             else:
                 context.setVelocitiesToTemperature(thermo_state.temperature)

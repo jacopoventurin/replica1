@@ -118,17 +118,6 @@ sim_params ={
     'save_atoms': 'protein'   #save position and forces of protein's atoms only 
 }
 
-sim_params_checkpoints ={
-    'n_attempts': 129,
-    'md_timesteps': 600,
-    'equilibration_timesteps': 100,
-    'save': True,
-    'save_interval': 3,
-    'checkpoint_simulations': True,
-    'mixing': 'all',
-    'save_atoms': 'protein'
-}
-
 
 print('Simulation of 20 ns trajectory trying 129 exchange between all replicas for each timesteps with rescale of velocities')
 print('-' * 50)
@@ -137,20 +126,23 @@ print(f'Simulation started at time {start}')
 print('-' * 50)
 
 for step in range(10):   # 20 ns of production time 
-    if step == 9:
-        # locally save position and forces every 2 ns and save checkpoint state
-        position, forces, acceptance = parallel_tempering.run(4, **sim_params_checkpoints)
-    else:
-        # locally save position and forces every 2 ns
-        position, forces, acceptance = parallel_tempering.run(4, **sim_params)  
+    # locally save position and forces every 2 ns
+    position, forces, acceptance = parallel_tempering.run(4, **sim_params)  
     np.save(f'position_{step}.npy', position)
     np.save(f'forces_{step}.npy', forces)
     np.save(f'acceptance_{step}.npy', acceptance)
     
     del position
     del forces
+
+    # save checkpoint after 10 ns
+    if step == 4:
+        parallel_tempering.save_checkpoint(code='10ns')
     
     print(f'{(step+1)*2} ns of simulation done')
+
+# save final checkpoint
+parallel_tempering.save_checkpoint(code='20ns')
 
 temperature_history = parallel_tempering.get_temperature_history(asNpy=True)
 np.save('temperature_history', temperature_history)

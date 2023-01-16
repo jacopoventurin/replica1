@@ -39,7 +39,8 @@ class ReplicaExchange:
         self._mcmc_move = mcmc_move
         self.n_replicas = len(thermodynamic_states)
         self._topology = None
-        self.reporter = None
+        self._dimension = None
+        self._reporter = None
 
         self._temperature_list = [self._thermodynamic_states[i].temperature for i in range(self.n_replicas)]
         self.rescale_velocities = rescale_velocities
@@ -141,8 +142,8 @@ class ReplicaExchange:
         This method add a reporter object to the class, used to save some interesting variables 
         during the simulation (e.g. temperature, total energy ...)
         """
-        if self.reporter is None:
-            self.reporter = reporter
+        if self._reporter is None:
+            self._reporter = reporter
         else:
             raise AttributeError('Multiple reporters not jet supported for this class')
     
@@ -186,9 +187,7 @@ class ReplicaExchange:
                             md_timesteps:int = 1, 
                             equilibration_timesteps:int = 0, 
                             save:bool = False, 
-                            save_interval:int = 1,
-                            report_state:bool =False,
-                            report_interval:int = 1
+                            save_interval:int = 1
                             ):
         """
         Apply _mcmc_move to all the replicas md_timesteps times. If equilibration_timesteps > 0,
@@ -216,17 +215,17 @@ class ReplicaExchange:
             mpiplus.distribute(self._run_replica, range(self.n_replicas), send_results_to=0)
 
             # verify if reporter was loaded
-            if self.reporter is not None:
-                report_interval = self.reporter.get_report_interval()
+            if self._reporter is not None:
+                report_interval = self._reporter.get_report_interval()
 
             if md_step > equilibration_timesteps:
                     if save and (md_step % save_interval == 0):
                         self.positions.append([])
                         self.forces.append([])
                         self.positions[-1], self.forces[-1] = self._grab_forces()
-                    if self.reporter is not None:
+                    if self._reporter is not None:
                         if (md_step % report_interval) == 0:
-                            self.reporter.report(self._thermodynamic_states, self._replicas_sampler_states)
+                            self._reporter.report(self._thermodynamic_states, self._replicas_sampler_states)
                     
 
 

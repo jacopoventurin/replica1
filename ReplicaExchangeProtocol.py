@@ -425,6 +425,6 @@ class ReplicaExchange:
             context, _ = cache.global_context_cache.get_context(thermo_state)
             sampler_state.apply_to_context(context)
             if original_temperature is not None:
-                context.setVelocitiesToTemperature(np.sqrt(thermo_state.temperature/original_temperature[i_t]))
+                context.setVelocities(context.getState(getVelocities=True).getVelocities()*np.sqrt(thermo_state.temperature/original_temperature[i_t]))
             else:
                 context.setVelocitiesToTemperature(thermo_state.temperature)

@@ -102,7 +102,7 @@ reporter = ReplicaStateReporter('state.csv', reportInterval=20, time=True, poten
 parallel_tempering.load_reporter(reporter)
 
 # Load state of the simulation from checkpoint 
-#parallel_tempering._load_contexts()
+parallel_tempering._load_contexts()
 
 # Run symulation and save position and forces every 100 timesteps
 
@@ -115,8 +115,8 @@ sim_params ={
     'save_interval': 3, # save every 3 ps
     'checkpoint_simulations': False, 
     'mixing': 'all',   #try exchange between neighbors only
-    'save_atoms': 'protein',   #save position and forces of protein's atoms only
-    'reshape_for_TICA': 'True'  #save in format for TICA analysis 
+    'save_atoms': 'protein',   #save position and forces of protein's atoms only 
+    'reshape_for_TICA': 'True'  #save in format for TICA analysis
 }
 
 
@@ -151,3 +151,5 @@ np.save('temperature_history', temperature_history)
 end = time.time()
 print(f'Simulation ended at {end}')
 print(f'Total simulation time {end-start}')
+
+

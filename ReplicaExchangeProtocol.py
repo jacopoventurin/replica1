@@ -158,6 +158,44 @@ class ReplicaExchange:
             return np.array(self._temperature_history)
         else:
             return self._temperature_history
+    
+
+    def save_checkpoint(self, code:str = None):
+        """
+        Save checkpoint in n_replicas number of file of the form 
+        {code}_checkpoint-{idx}.xml, where idx is the index of a specific replica.
+        If code is not specified the output files are of the form checkpoint-{idx}.xml
+        """
+        if code == None:
+            checkpoint_string = 'checkpoint'
+        else:
+            checkpoint_string = f'{code}_checkpoint'
+
+        for i_t,(thermo_state, sampler_state) in enumerate(zip(self._thermodynamic_states, self._replicas_sampler_states)):
+            context, _ = cache.global_context_cache.get_context(thermo_state)
+            sampler_state.apply_to_context(context)
+            state = context.getState(getPositions=True, getVelocities=True, getParameters=True)
+            state_xml = mm.XmlSerializer.serialize(state)
+            with open(f'{checkpoint_string}-{i_t}.xml', 'w') as output:
+                output.write(state_xml)
+
+    def load_context_from_checkpoint(self, code:str = None):
+        """
+        Load context from a checkpoint files of the form {code}_checkpoint-{idx}.xml
+        If code is None then context is loaded from checkpoint-{idx}.xml
+        """
+        if code == None:
+            checkpoint_string = 'checkpoint'
+        else:
+            checkpoint_string = f'{code}_checkpoint'
+
+        for i_t,(thermo_state, sampler_state) in enumerate(zip(self._thermodynamic_states, self._replicas_sampler_states)):
+            context, _ = cache.global_context_cache.get_context(thermo_state)
+            with open(f'{checkpoint_string}-{i_t}.xml', 'r') as input:
+                state = mm.XmlSerializer.deserialize(input.read())
+                sampler_state.positions = state.getPositions()
+                sampler_state.velocities = state.getVelocities()
+            sampler_state.apply_to_context(context)
 
 
     def _define_target_elements_and_dimension(self, save_atoms):

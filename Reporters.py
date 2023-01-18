@@ -199,6 +199,8 @@ class ReplicaStateReporter:
             headers.append('Box Volume (nm^3)')
         if self._elapsedTime:
             headers.append('Elapsed Time (s)')
+        if self._speed:
+            headers.append('Speed (ns/day)')
         return headers
 
     def __del__(self):

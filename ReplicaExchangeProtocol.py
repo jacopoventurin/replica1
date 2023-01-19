@@ -4,6 +4,7 @@ from openmmtools import cache
 import openmm.unit as unit
 import openmm as mm
 import mpiplus
+import multiprocessing as mp
 
 class ReplicaExchange:
     def __init__(
@@ -52,6 +53,7 @@ class ReplicaExchange:
             self._temperature_history.append(temperature)
         else:
             self._temperature_history = None   
+        self.n_processors = mp.cpu_count()
 
     def run(self, 
             n_iterations:int = 1, 
@@ -241,29 +243,31 @@ class ReplicaExchange:
                             save_interval:int = 1
                             ):
         """
-        Apply _mcmc_move to all the replicas md_timesteps times. If equilibration_timesteps > 0,
-        an equilibration phase is considered before try to save position and forces.
+        Apply _mcmc_move to all the replicas md_timesteps times. 
+        If equilibration_timesteps > 0,
+            an equilibration phase is considered before try to save position and forces.
         If save is set to True position and forces are saved every save_interval time.
         _thermodynamic_state[i] is associated to the replica configuration in _replicas_sampler_states[i].
-        If reporter was loaded, reports is also saved.
 
         Params:
         -------
         md_timesteps:
-            number of MD timesteps, menas how many times apply self.mcmc_move to each state
+            how many times apply self.mcmc_move to each state
         equilibration_timesteps:
-            number of timesteps for equilibration. During equilibration position, forces and 
-            state of the system are not saved
+            During equilibration position, forces and state of the system are not saved
         save:
-            if set to True position and forces are saved every save_interval timesteps
+            position and forces saving every save_interval timesteps
         save_interval:
-            if save is set to True, position and forces are saved every save_interval timesteps 
+            frequency to save position and forces 
         """
         for md_step in range(md_timesteps):
             # for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
             #     self._mcmc_move.apply(thermo_state, sampler_state)
+            # mpiplus.distribute(self._run_replica, range(self.n_replicas), send_results_to=0)
 
-            mpiplus.distribute(self._run_replica, range(self.n_replicas), send_results_to=0)
+            pool = mp.Pool(self._num_processors-1)
+            pool.map_async(self._run_replica, [r for r in range(self.n_replicas)])
+            pool.close()
 
             # verify if reporter was loaded
             if self._reporter is not None:
@@ -280,7 +284,6 @@ class ReplicaExchange:
 
     def _run_replica(self, replica_id):
         self._mcmc_move.apply(self._thermodynamic_states[replica_id], self._replicas_sampler_states[replica_id])
-        
         
     def _mix_replicas(self, mixing:str = 'all', n_attempts=1,):
         """

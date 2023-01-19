@@ -285,6 +285,7 @@ class ReplicaExchange:
     def _run_replica(self, replica_id):
         self._mcmc_move.apply(self._thermodynamic_states[replica_id], self._replicas_sampler_states[replica_id])
         
+
     def _mix_replicas(self, mixing:str = 'all', n_attempts=1,):
         """
         Mix replicas using two possible strategy: try to exchange two replicas randomly choosen 

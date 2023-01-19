@@ -4,7 +4,22 @@ from openmmtools import cache
 import openmm.unit as unit
 import openmm as mm
 import mpiplus
-import multiprocessing as mp
+import os
+
+def get_available_gpus():
+    '''
+        See how many gpu available to use
+    '''
+    if 'CUDA_VISIBLE_DEVICES' in os.environ:
+        result = os.environ["CUDA_VISIBLE_DEVICES"].split(",")
+    else:
+        try:
+            import torch
+            torch.cuda.is_available()
+            result = list(range(torch.cuda.device_count()))
+        except:
+            print('Unable to count GPU devices')
+    return len(result)
 
 class ReplicaExchange:
     def __init__(
@@ -31,10 +46,10 @@ class ReplicaExchange:
         mcmc_move:
             should be openmmtools compatible move (e.g. openmmtools.mcmc.LangevinSplittingDynamicsMove)
         rescale_velocities:
-            if set to True velocities are rescaled after every attempt to exchange replicas.
+            velocities are rescaled after every attempt to exchange replicas according to sqrt(Tnew/Told).
         save_temperatures_history:
-            if set to True the history of exchnage is saved in a format (n_iteration, n_replicas).
-            The history can be obtained by get_temperature_history() method.
+            the history of exchange is saved in a format (n_iteration, n_replicas).
+                obtained by get_temperature_history() method.
         """
         self._thermodynamic_states = thermodynamic_states
         self._replicas_sampler_states = sampler_states
@@ -53,13 +68,24 @@ class ReplicaExchange:
             self._temperature_history.append(temperature)
         else:
             self._temperature_history = None   
-        self.n_processors = mp.cpu_count()
+        self._local_cache = []
+
+        platform = mm.Platform.getPlatformByName("CUDA")
+        self.n_gpus = get_available_gpus()
+        self._local_cache = []
+        for i_gpu in range(self.n_gpus):
+            self._local_cache.append(cache.ContextCache(
+            capacity=None,
+            time_to_live=None,
+            platform=platform,
+            platform_properties={"DeviceIndex": "{}".format(i_gpu), "Precision": "mixed"}
+        ))            
 
     def run(self, 
             n_iterations:int = 1, 
             n_attempts:int = 1, 
-            md_timesteps:int =1,
-            equilibration_timesteps:int =0,  
+            md_timesteps:int = 1,
+            equilibration_timesteps:int = 0,  
             save:bool = False, 
             save_interval:int = 1, 
             checkpoint_simulations:bool = False, 
@@ -67,26 +93,30 @@ class ReplicaExchange:
             save_atoms:str = 'all',
             reshape_for_TICA:bool = False):
         """
-        Run a simulation with replica exchange protocol. Is possible to try exchange between 
-        all replicas or just between neighbors.
+        Run replica exchange protocol. 
+            Propagate dynamics
+            Attempt Replica Switch
+            Save coordinates
 
         Params
         ------
         n_iteration:
-            number of iteration to perform during the all symulation, default is 1.
+            number of times to perform the first two steps listed above
         n_attempts:
-            number of attempts to exchange a pair of replicas for each iteration, default is 1.
+            number of attempts to exchange a pair of replicas for each iteration
         md_timesteps:
-            how many md timesteps propagate the system for each iteration. 
+            total number of md timesteps to propagate the system
         equilibraton_timesteps:
-            how long is the equilibration phase.       
+            timelength in which to not save coordinates as system is equilibrating      
         save:
-            if set to True position and forces are saved every save_interval steps during 
-            the production phase. Position and forces are returned as numpy array.
+            position and forces are saved every save_interval steps during 
+                the production phase. Position and forces are returned as numpy array.
         save_interval:
-            interval for save position and forces, default is 1.
+            interval for save position and forces
+            total number of points saved are thus
+                (md_timesteps - equilibration_timesteps)/save_interval 
         checkpoint_simulations:
-            if set to True a checkpoint configuration is saved every iteration.
+            a checkpoint configuration is saved every iteration.
         mixing:
             can be 'all' or 'neighbors'. If 'all' exchange between all possible replicas is attempted,
             while if 'neighbors' exchange between neighbors replicas only is attempted. If 'all' then 
@@ -94,19 +124,19 @@ class ReplicaExchange:
             number of replicas in the simulation. See https://aip.scitation.org/doi/10.1063/1.3660669
             for more information.
         save_atoms:
-            can be 'all' or any mdtraj compatible string. For example if set to 'all' positions and
-            forces of all toms in the system are saved, while if set to 'protein' positions and forces 
-            of protein's atoms only are saved.
+            any mdtraj compatible string 
+            if set to 'all' positions and forces for all atoms in the system are saved
         reshape_for_TICA:
-            if set to True position and forces are returned with shape 
-            (n_iteration, n_replicas, md_timesteps-equilibration_timesteps)/save_interval, any, 3),
-            else (n_replicas, n_iteration*(md_timesteps-equilibration_timesteps)/save_interval, any, 3)
-            is returned. Default is False
+            position and forces are returned with shape 
+                (n_iteration, n_replicas, md_timesteps-equilibration_timesteps)/save_interval, any, any),
 
         Return
         ------
-            If save is set to True position, forces, acceptance_matrix are returned.
-            If save is set to False acceptance_matrix only is returned
+            positions:
+            forces:
+            acceptance_matrix:
+                upper half is number of successful swaps between thermodynamic state i and j
+                lower half is number of attempted swaps between thermodynamic state i and j
         """
         self.positions = []
         self.forces = []
@@ -115,7 +145,7 @@ class ReplicaExchange:
 
         if mixing == 'neighbors':
             self._define_neighbors()
-        for iteration in range(n_iterations):
+        for _ in range(n_iterations):
             ## Propagate dynamics
             self._propagate_replicas(md_timesteps=md_timesteps, equilibration_timesteps=equilibration_timesteps, 
                                         save=save, save_interval=save_interval)
@@ -127,7 +157,7 @@ class ReplicaExchange:
 
         if save:
             ## Output in the format shape
-            # replica, frames, n_atoms, xyz
+            #    replica, frames, n_atoms, xyz
             positions = np.swapaxes(np.array(self.positions), 0, 1)
             forces = np.swapaxes(np.array(self.forces),0 , 1)
             if reshape_for_TICA:
@@ -137,7 +167,7 @@ class ReplicaExchange:
             else:    
                 return positions, forces, self.acceptance_matrix
         else:
-            return self.acceptance_matrix
+            return None,None,self.acceptance_matrix
 
 
     def load_topology(self, topology: md.Topology):
@@ -241,7 +271,7 @@ class ReplicaExchange:
                             equilibration_timesteps:int = 0, 
                             save:bool = False, 
                             save_interval:int = 1
-                            ):
+        ):
         """
         Apply _mcmc_move to all the replicas md_timesteps times. 
         If equilibration_timesteps > 0,
@@ -261,13 +291,7 @@ class ReplicaExchange:
             frequency to save position and forces 
         """
         for md_step in range(md_timesteps):
-            # for thermo_state, sampler_state in zip(self._thermodynamic_states, self._replicas_sampler_states):
-            #     self._mcmc_move.apply(thermo_state, sampler_state)
-            # mpiplus.distribute(self._run_replica, range(self.n_replicas), send_results_to=0)
-
-            pool = mp.Pool(self._num_processors-1)
-            pool.map_async(self._run_replica, [r for r in range(self.n_replicas)])
-            pool.close()
+            _ = mpiplus.distribute(self._run_replica, range(self.n_replicas), send_results_to=0)
 
             # verify if reporter was loaded
             if self._reporter is not None:
@@ -283,7 +307,12 @@ class ReplicaExchange:
                     
 
     def _run_replica(self, replica_id):
-        self._mcmc_move.apply(self._thermodynamic_states[replica_id], self._replicas_sampler_states[replica_id])
+        context_id = replica_id % self.n_gpus
+        self._mcmc_move.apply(
+            self._thermodynamic_states[replica_id], 
+            self._replicas_sampler_states[replica_id],
+            context_cache=self._local_cache[context_id]
+        )
         
 
     def _mix_replicas(self, mixing:str = 'all', n_attempts=1,):
@@ -312,7 +341,7 @@ class ReplicaExchange:
             self.energy_matrix = None
 
         premix_temperatures = []
-        for i_t,thermo_state in enumerate(self._thermodynamic_states):
+        for _,thermo_state in enumerate(self._thermodynamic_states):
             premix_temperatures.append(thermo_state.temperature)
         
 

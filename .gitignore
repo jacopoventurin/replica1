@@ -6,6 +6,10 @@ __pycache__/
 .vscode/
 .idea/
 
+job.*
+state.csv
+submit.sh
+
 # C extensions
 *.so
 

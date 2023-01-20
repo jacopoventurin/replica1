@@ -9,7 +9,7 @@ from mpi4py import MPI
 import logging
 from time import time
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.WARNING)
 
 logger = logging.getLogger(__name__)
 
@@ -157,17 +157,17 @@ class ReplicaExchange:
         for it in range(n_iterations):
             start = time()
             ## Propagate dynamics
-            logger.info(f'Propagate replicas iter:{it}')
+            logger.warning(f'Propagate replicas iter:{it}')
             self._propagate_replicas(md_timesteps=md_timesteps, equilibration_timesteps=equilibration_timesteps,
                                         save=save, save_interval=save_interval)
             end = time()
-            logger.info(f'Propagate replicas took {end-start} [sec]')
+            logger.warning(f'Propagate replicas took {end-start} [sec]')
             ## Mix replicas
-            logger.info(f'Mix replicas iter:{it}')
+            logger.warning(f'Mix replicas iter:{it}')
             start = time()
             self._mix_replicas(mixing=mixing, n_attempts=n_attempts)
             end = time()
-            logger.info(f'Mix replicas took {end-start} [sec]')
+            logger.warning(f'Mix replicas took {end-start} [sec]')
         if checkpoint_simulations:
             logger.debug(f'checkpoint_simulations')
             self._save_contexts()
@@ -381,7 +381,7 @@ class ReplicaExchange:
             logger.debug(f"_mix_replicas attempt:{attempt} from RANK:{rank}")
             self._mix_states(mixing, random_number_list[attempt],premix_temperatures)
         end = time()
-        logger.info(f"_mix_replicas Exchange took {end-start} [sec]")
+        logger.warning(f"_mix_replicas Exchange took {end-start} [sec]")
 
     @mpiplus.on_single_node(0, broadcast_result=False, sync_nodes=False)
     def _mix_states(self, mixing, random_number, premix_temperatures=None):

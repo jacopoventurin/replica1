@@ -123,7 +123,7 @@ sim_params ={
 print('Simulation of 20 ns trajectory trying 129 exchange between all replicas for each timesteps with rescale of velocities')
 print('-' * 50)
 start = time.time()
-print(f'Simulation started at time {time.ctime()}')
+print(f'Simulation started at {time.ctime()}')
 print('-' * 50)
 
 for step in range(10):   # 20 ns of production time 
@@ -147,7 +147,7 @@ parallel_tempering.save_checkpoint(code='20ns')
 
 temperature_history = parallel_tempering.get_temperature_history(asNpy=True)
 np.save('temperature_history', temperature_history)
-    
+
 end = time.time()
 print(f'Simulation ended at {time.ctime()}')
-print(f'Total simulation time {end-start}')
+print(f'Total simulation time {end-start} [sec]')

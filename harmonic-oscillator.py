@@ -69,8 +69,9 @@ for atom in range(2):
 
 simulations = []
 integrators = []
-test_positions = np.zeros((2,n_replicas,2,3))
+#test_positions = np.zeros((2,n_replicas,2,3))
 md_step = 1
+test_positions = np.zeros((2,n_replicas,md_step,2,3))
 
 for i_t,temperature in enumerate(temperatures):
     integrators.append(mm.VerletIntegrator(1*unit.femtosecond))
@@ -117,7 +118,7 @@ parallel_tempering = ReplicaExchange(
 )
 
 # Define and load reporter 
-reporter = ReplicaStateReporter('state.csv', reportInterval=50, time=True, potentialEnergy=True,
+reporter = ReplicaStateReporter('state.csv', reportInterval=1, time=True, potentialEnergy=True,
                                 kineticEnergy=True, totalEnergy=True, volume=True, speed=True, elapsedTime=True)
 
 parallel_tempering.load_reporter(reporter)
@@ -143,19 +144,23 @@ start = time.time()
 print(f'Simulation started at time {time.ctime()}')
 print('-' * 50)
 
-positions, forces, acceptance_matrix, temperature_history = parallel_tempering.run(**sim_params)  
+positions, forces, acceptance_matrix = parallel_tempering.run(**sim_params)  
     
 end = time.time()
 print(f'Simulation ended at {time.ctime()}')
 print(f'Total simulation time {end-start}')
 
+temperature_history = parallel_tempering.get_temperature_history()
+
 if rank == 0:
     np.save('positions.npy',positions)
+    #np.save('temperature_history.npy', temperature_history)
+    positions = np.array(positions)
 
     for i_t,temperature in enumerate(temperatures):
         ## After first MD step
-        np.testing.assert_allclose(positions[:,0],test_positions[0],rtol=1e-12)
+        np.testing.assert_allclose(positions[0],test_positions[0],rtol=1e-12)
         ## After swap and second MD step
-        np.testing.assert_allclose(positions[:,1],test_positions[1],rtol=1e-12)
+        np.testing.assert_allclose(positions[1],test_positions[1],rtol=1e-12)
 
-    print(test_positions[1],positions[:,1])
+    print(test_positions[1],positions[1])

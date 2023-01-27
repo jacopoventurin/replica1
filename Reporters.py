@@ -57,31 +57,34 @@ class ReplicaStateReporter:
         self._separator = separator
         self._append = append
         self._hasInitialized = False
+        self._hasTimeInitialized = False
         self._needParameters = volume or time or speed
         self._needEnergy = potentialEnergy or kineticEnergy or totalEnergy
 
+        self.values_list = None
 
-    def report(self, thermodynamic_states, sampler_states):
-        """Generate a report from thermo_state, sampler_state objects.
+
+    def store_report(self, thermodynamic_states, sampler_states):
+        """
+        Generate and store in memory a report from thermo_state, sampler_state objects.
+        The report can be written in the output file calling report() method.
 
         Parameters
         ----------
         tehrmodynamic_satate : 
             
         sampler_state : 
-            
+
         """
-        if not self._hasInitialized:
-            headers = self._constructHeaders()
-            #if not self._append:
-            print('"%s"' % ('"'+self._separator+'"').join(headers), file=self._out)
-            try:
-                self._out.flush()
-            except AttributeError:
-                pass
-            self._initialClockTime = time.time()
+
+        if not self._hasTimeInitialized:
             self._initialSimulationTime = self._getInitialSimulationTime(thermodynamic_states[0], sampler_states[0])#state.getTime()
-            self._hasInitialized = True
+            self._initialClockTime = time.time()
+
+            self._hasTimeInitialized = True
+        
+        if self.values_list is None:
+            self.values_list = []
 
         for i_t, (thermo_state, sampler_state) in enumerate(zip(thermodynamic_states, sampler_states)):
             context, _ = cache.global_context_cache.get_context(thermo_state)
@@ -92,16 +95,38 @@ class ReplicaStateReporter:
             self._checkForErrors(state)
 
             # Query for the values
-            values = self._constructReportValues(state, i_t)
+            self.values_list.append(self._constructReportValues(state, i_t))
 
 
-            # Write the values.
-            print(self._separator.join(str(v) for v in values), file=self._out)
+
+    def report(self):
+        """
+        Save the report stored in self.value_list to the ouput file.
+        If the file was not initialized header is printed.
+        """
+        if not self._hasInitialized:
+            headers = self._constructHeaders()
+            #if not self._append:
+            print('"%s"' % ('"'+self._separator+'"').join(headers), file=self._out)
             try:
                 self._out.flush()
             except AttributeError:
                 pass
+            
+            self._hasInitialized = True
 
+        if self.values_list is not None:
+            for values in self.values_list:
+                # Write the values.
+                print(self._separator.join(str(v) for v in values), file=self._out)
+                try:
+                    self._out.flush()
+                except AttributeError:
+                    pass
+            del self.values_list
+            self.values_list = None
+        else:
+            pass
 
     def get_report_interval(self):
         """
@@ -199,6 +224,8 @@ class ReplicaStateReporter:
             headers.append('Box Volume (nm^3)')
         if self._elapsedTime:
             headers.append('Elapsed Time (s)')
+        if self._speed:
+            headers.append('Speed (ns/day)')
         return headers
 
     def __del__(self):

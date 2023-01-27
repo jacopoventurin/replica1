@@ -144,7 +144,7 @@ class ReplicaExchange:
             if set to 'all' positions and forces for all atoms in the system are saved
         reshape_for_TICA:
             position and forces are returned with shape
-                (n_iteration, n_replicas, md_timesteps-equilibration_timesteps)/save_interval, any, any),
+                (n_iteration, n_replicas, md_timesteps-equilibration_timesteps)/save_interval, any, any)
 
         Return
         ------
@@ -206,6 +206,10 @@ class ReplicaExchange:
             if checkpoint_simulations:
                 logger.debug(f"checkpoint_simulations")
                 self._save_context_checkpoints()
+            
+            if self._reporter is not None:
+                # Save report to file 
+                self._reporter.report()
 
             if save:
                 logger.debug(f"save")
@@ -214,16 +218,22 @@ class ReplicaExchange:
                 #  Note that the final position will not be at the final swapped temperature
                 positions = np.swapaxes(np.array(self.positions), 0, 1)
                 forces = np.swapaxes(np.array(self.forces), 0, 1)
+                if reshape_for_TICA:
+                    # if reshape_for_TICA output is in the format shape 
+                    # n_iteration, n_replicas, md_timesteps-equilibration_timesteps)/save_interval, any, any
+                    positions = np.split(positions, n_iterations, axis=1)
+                    forces = np.split(forces, n_iterations, axis=1)
+                #return positions_list, forces_list, self.acceptance_matrix
+
                 return (
                     positions,
                     forces,
                     self.acceptance_matrix,
-                    self._temperature_history,
                 )
             else:
-                return None, None, self.acceptance_matrix, self._temperature_history
+                return None, None, self.acceptance_matrix
         else:
-            return None, None, None, None
+            return None, None, None
 
     def load_topology(self, topology: md.Topology):
         """
@@ -253,10 +263,16 @@ class ReplicaExchange:
         iterations specified in run.
         If asNpy is set to True temperature history is returned as npy array
         """
-        if asNpy:
-            return np.array(self._temperature_history)
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+
+        if rank == 0:
+            if asNpy:
+                return np.array(self._temperature_history)
+            else:
+                return self._temperature_history
         else:
-            return self._temperature_history
+            return None
 
     def _save_context_checkpoints(self, filename: str = "checkpoint"):
         """
@@ -369,16 +385,16 @@ class ReplicaExchange:
             # verify if reporter was loaded
             if self._reporter is not None:
                 report_interval = self._reporter.get_report_interval()
-            if md_step > equilibration_timesteps:
+            if md_step >= equilibration_timesteps:
                 if save and (md_step % save_interval == 0):
                     self.positions.append([])
                     self.forces.append([])
                     self.positions[-1], self.forces[-1] = self._grab_forces()
                 if self._reporter is not None:
-                    if (md_step % report_interval) == 0 and rank == 0:
-                        self._reporter.report(
-                            self._thermodynamic_states[0],
-                            self._replicas_sampler_states[0],
+                    if (md_step % report_interval) == 0:
+                        self._reporter.store_report(
+                            self._thermodynamic_states,
+                            self._replicas_sampler_states,
                         )
 
     def _run_replica(self, replica_id):

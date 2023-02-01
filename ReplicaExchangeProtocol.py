@@ -256,6 +256,23 @@ class ReplicaExchange:
         else:
             raise AttributeError("Multiple reporters not jet supported for this class")
 
+    def save_temperature_history(self, filename: str = "temperature_history.npy", asNpy: bool = True):
+        """
+        Save temperature_history in a file. If asNpy = True then temperature_history 
+        is automatically saved as .npy array. Only the 0 rank process saves.
+        """
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+
+        if rank ==0:
+            if asNpy:
+                np.save(filename, self._temperature_history)
+            else:
+                with open(filename, "w") as f:
+                    f.write(self._temperature_history)
+        else:
+            pass
+
     def get_temperature_history(self, asNpy: bool = True):
         """
         Return temperature history with shape

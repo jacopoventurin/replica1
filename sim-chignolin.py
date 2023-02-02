@@ -10,9 +10,10 @@ import os
 import os.path as osp
 from ReplicaExchangeProtocol import ReplicaExchange
 import time
+from mpi4py import MPI
 
-
-if osp.exists('output-1.nc'): os.system('rm output-1.nc')
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
 
 # System creation
 # Define force field
@@ -138,9 +139,11 @@ for step in range(10):   # 20 ns of production time
     else:
         # locally save position and forces every 2 ns
         position, forces, acceptance = parallel_tempering.run(10, **sim_params)  
-    np.save(f'position_{step}.npy', position)
-    np.save(f'forces_{step}.npy', forces)
-    np.save(f'acceptance_{step}.npy', acceptance)
+
+    if rank == 0:
+        np.save(f'position_{step}.npy', position)
+        np.save(f'forces_{step}.npy', forces)
+        np.save(f'acceptance_{step}.npy', acceptance)
     
     del position
     del forces

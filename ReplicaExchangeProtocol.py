@@ -256,6 +256,23 @@ class ReplicaExchange:
         else:
             raise AttributeError("Multiple reporters not jet supported for this class")
 
+    def save_temperature_history(self, filename: str = "temperature_history.npy", asNpy: bool = True):
+        """
+        Save temperature_history in a file. If asNpy = True then temperature_history 
+        is automatically saved as .npy array. Only the 0 rank process saves.
+        """
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+
+        if rank ==0:
+            if asNpy:
+                np.save(filename, self._temperature_history)
+            else:
+                with open(filename, "w") as f:
+                    f.write(self._temperature_history)
+        else:
+            pass
+
     def get_temperature_history(self, asNpy: bool = True):
         """
         Return temperature history with shape
@@ -382,20 +399,21 @@ class ReplicaExchange:
                     propagated_state, ignore_velocities=False
                 )
 
-            # verify if reporter was loaded
-            if self._reporter is not None:
-                report_interval = self._reporter.get_report_interval()
-            if md_step >= equilibration_timesteps:
-                if save and (md_step % save_interval == 0):
-                    self.positions.append([])
-                    self.forces.append([])
-                    self.positions[-1], self.forces[-1] = self._grab_forces()
+            if rank == 0:
+                # verify if reporter was loaded
                 if self._reporter is not None:
-                    if (md_step % report_interval) == 0:
-                        self._reporter.store_report(
-                            self._thermodynamic_states,
-                            self._replicas_sampler_states,
-                        )
+                    report_interval = self._reporter.get_report_interval()
+                if md_step >= equilibration_timesteps:
+                    if save and (md_step % save_interval == 0):
+                        self.positions.append([])
+                        self.forces.append([])
+                        self.positions[-1], self.forces[-1] = self._grab_forces()
+                    if self._reporter is not None:
+                        if (md_step % report_interval) == 0:
+                            self._reporter.store_report(
+                                self._thermodynamic_states,
+                                self._replicas_sampler_states,
+                            )
 
     def _run_replica(self, replica_id):
         comm = MPI.COMM_WORLD

@@ -158,7 +158,8 @@ class ReplicaExchange:
         rank = comm.Get_rank()
         self.positions = []
         self.forces = []
-        self.acceptance_matrix = np.zeros((self.n_replicas, self.n_replicas))
+        if rank == 0:
+            self.acceptance_matrix = np.zeros((self.n_replicas, self.n_replicas))
         self._define_target_elements_and_dimension(save_atoms)
 
         if mixing == "neighbors":
@@ -183,7 +184,7 @@ class ReplicaExchange:
                 self._compute_reduced_potential_matrix()
             else:
                 self.energy_matrix = None
-            self._compute_reduced_potential_matrix()
+            #self._compute_reduced_potential_matrix()
 
             end = time()
             logger.debug(f"Energy matrix computation took {end-start} [sec]")
@@ -201,6 +202,7 @@ class ReplicaExchange:
                     logger.debug(
                         f"Check position post-mix replica {ii} {self._grab_forces()[0][ii][0]}"
                     )
+                print(self.acceptance_matrix)
 
         if rank == 0:
             if checkpoint_simulations:
@@ -538,7 +540,9 @@ class ReplicaExchange:
             self.acceptance_matrix[i, j] += 1
 
             if self.energy_matrix is not None:
-                self.energy_matrix[[i, j]] = self.energy_matrix[[j, i]]
+                self.energy_matrix[:,[i, j]] = self.energy_matrix[:,[j, i]]
+
+
 
     def _compute_reduced_potential_matrix(self):
         # Compute the reduced potential matrix between all possible couples

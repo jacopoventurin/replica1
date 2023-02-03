@@ -64,12 +64,12 @@ class ReplicaStateReporter:
         self.values_list = None
 
 
-    def store_report(self, thermodynamic_states, sampler_states):
+    def store_report(self, thermodynamic_states, sampler_states, temperature_list = None):
         """
         Generate and store in memory a report from thermo_state, sampler_state objects.
         The report can be written in the output file calling report() method.
 
-        Parameters
+        Inputs
         ----------
         tehrmodynamic_satate : 
             
@@ -86,7 +86,8 @@ class ReplicaStateReporter:
         if self.values_list is None:
             self.values_list = []
 
-        for i_t, (thermo_state, sampler_state) in enumerate(zip(thermodynamic_states, sampler_states)):
+        for thermo_state, sampler_state in zip(thermodynamic_states, sampler_states):
+            i_t = temperature_list.index(thermo_state.temperature)
             context, _ = cache.global_context_cache.get_context(thermo_state)
             sampler_state.apply_to_context(context)
             state = context.getState(getEnergy=self._needEnergy, getParameters=self._needParameters)

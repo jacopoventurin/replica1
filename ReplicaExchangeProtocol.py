@@ -158,6 +158,7 @@ class ReplicaExchange:
         rank = comm.Get_rank()
         self.positions = []
         self.forces = []
+        self.energies = []
         self.acceptance_matrix = np.zeros((self.n_replicas, self.n_replicas))
         self._define_target_elements_and_dimension(save_atoms)
 
@@ -165,17 +166,18 @@ class ReplicaExchange:
             self._define_neighbors()
 
         for i_t in range(n_iterations):
-            start = time()
             ## Propagate dynamics
-            logger.warning(f"Propagate replicas iter:{i_t}")
+            start = time()
             self._propagate_replicas(
                 md_timesteps=md_timesteps,
                 equilibration_timesteps=equilibration_timesteps,
                 save=save,
                 save_interval=save_interval,
             )
+
             end = time()
-            logger.warning(f"Propagate replicas took {end-start} [sec]")
+            if rank == 0:
+                logger.warning(f"Propagate replicas iter:{i_t} took {end-start} [sec]")
 
             ## Energy matrix computation
             start = time()
@@ -186,17 +188,17 @@ class ReplicaExchange:
             self._compute_reduced_potential_matrix()
 
             end = time()
-            logger.debug(f"Energy matrix computation took {end-start} [sec]")
+            if rank == 0:
+                logger.debug(f"Energy matrix computation took {end-start} [sec]")
 
             ## Mix replicas
-            logger.warning(f"Mix replicas iter:{i_t}")
             start = time()
             self._thermodynamic_states = self._mix_replicas(
                 mixing=mixing, n_attempts=n_attempts
             )
             end = time()
             if rank == 0:
-                logger.warning(f"Mix replicas took {end-start} [sec]")
+                logger.warning(f"Mix replicas iter: {i_t} took {end-start} [sec]")
                 for ii in range(self.n_replicas):
                     logger.debug(
                         f"Check position post-mix replica {ii} {self._grab_forces()[0][ii][0]}"
@@ -218,6 +220,7 @@ class ReplicaExchange:
                 #  Note that the final position will not be at the final swapped temperature
                 positions = np.swapaxes(np.array(self.positions), 0, 1)
                 forces = np.swapaxes(np.array(self.forces), 0, 1)
+                energies = np.swapaxes(np.array(self.energies), 0, 1)
                 if reshape_for_TICA:
                     # if reshape_for_TICA output is in the format shape 
                     # n_iteration, n_replicas, md_timesteps-equilibration_timesteps)/save_interval, any, any
@@ -228,12 +231,13 @@ class ReplicaExchange:
                 return (
                     positions,
                     forces,
+                    energies,
                     self.acceptance_matrix,
                 )
             else:
-                return None, None, self.acceptance_matrix
+                return None, None, None, self.acceptance_matrix
         else:
-            return None, None, None
+            return None, None, None, None
 
     def load_topology(self, topology: md.Topology):
         """
@@ -399,20 +403,22 @@ class ReplicaExchange:
                     propagated_state, ignore_velocities=False
                 )
 
-            # verify if reporter was loaded
-            if self._reporter is not None:
-                report_interval = self._reporter.get_report_interval()
-            if md_step >= equilibration_timesteps:
-                if save and (md_step % save_interval == 0):
-                    self.positions.append([])
-                    self.forces.append([])
-                    self.positions[-1], self.forces[-1] = self._grab_forces()
+            if rank == 0:
+                # verify if reporter was loaded
                 if self._reporter is not None:
-                    if (md_step % report_interval) == 0:
-                        self._reporter.store_report(
-                            self._thermodynamic_states,
-                            self._replicas_sampler_states,
-                        )
+                    report_interval = self._reporter.get_report_interval()
+                if md_step >= equilibration_timesteps:
+                    if save and (md_step % save_interval == 0):
+                        self.positions.append([])
+                        self.forces.append([])
+                        self.energies.append([])
+                        self.positions[-1], self.forces[-1], self.energies[-1] = self._grab_forces()
+                    if self._reporter is not None and (md_step % report_interval) == 0:
+                            self._reporter.store_report(
+                                self._thermodynamic_states,
+                                self._replicas_sampler_states,
+                                self._temperature_list,
+                            )
 
     def _run_replica(self, replica_id):
         comm = MPI.COMM_WORLD
@@ -483,7 +489,7 @@ class ReplicaExchange:
         logger.warning(f"_mix_replicas Exchange took {end-start} [sec]")
         return self._thermodynamic_states
 
-    def _mix_states(self, mixing, random_number, premix_temperatures=None):
+    def _mix_states(self, mixing, random_number):
         """
         Perform mixing
         Decorator runs only on first node and all process halted until finished and then broadcast
@@ -560,7 +566,7 @@ class ReplicaExchange:
 
     def _compute_reduced_potential(
         self, args
-    ):  # ,sampler_state, thermo_state, context=None):
+    ):  
         comm = MPI.COMM_WORLD
         rank = comm.Get_rank()
         sampler_state = args[0]
@@ -586,6 +592,7 @@ class ReplicaExchange:
         """
         forces = np.zeros((self.n_replicas, len(self.target_elements), self._dimension))
         positions = np.zeros(forces.shape)
+        energies = np.zeros(self.n_replicas)
         for (thermo_state, sampler_state) in zip(
             self._thermodynamic_states, self._replicas_sampler_states
         ):
@@ -601,9 +608,11 @@ class ReplicaExchange:
                 self.target_elements
             ]
             force = force.value_in_unit(unit.kilocalorie_per_mole / unit.angstrom)
+            energy = context.getState(getEnergy=True).getPotentialEnergy().value_in_unit(unit.kilocalorie_per_mole)
             positions[i_t] = position
             forces[i_t] = force
-        return positions, forces
+            energies[i_t] = energy
+        return positions, forces, energies
 
     def _define_neighbors(self):
         """ Define all possible couples of neighbors """
@@ -639,9 +648,7 @@ class ReplicaExchange:
         """
         Rescale velocities to desired temperature from thermodynamic state after swap attempt
         """
-        for i_t, (thermo_state, sampler_state) in enumerate(
-            zip(self._thermodynamic_states, self._replicas_sampler_states)
-        ):
+        for (thermo_state, sampler_state) in zip(self._thermodynamic_states, self._replicas_sampler_states):
             i_t = self._temperature_list.index(thermo_state.temperature)
             context = self._get_context(i_t, thermo_state)
             sampler_state.apply_to_context(context)

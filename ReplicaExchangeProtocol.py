@@ -185,7 +185,6 @@ class ReplicaExchange:
                 self._compute_reduced_potential_matrix()
             else:
                 self.energy_matrix = None
-            self._compute_reduced_potential_matrix()
 
             end = time()
             if rank == 0:
@@ -473,7 +472,7 @@ class ReplicaExchange:
         # Rescale velocities
         for attempt in range(n_attempts):
             # logger.debug(f"_mix_replicas attempt:{attempt} from RANK:{rank}")
-            self._mix_states(mixing, random_number_list[attempt], premix_temperatures)
+            self._mix_states(mixing, random_number_list[attempt])
 
         if self._temperature_history is not None:
             temperatures = [
@@ -509,14 +508,19 @@ class ReplicaExchange:
         self.acceptance_matrix[j, i] += 1
         end = time()
 
-        # Compute the energies.
         if self.energy_matrix is None:
+            ## Since the temperatures are swapping through time, we have to index correctly
             sampler_state_i, sampler_state_j = (
                 self._replicas_sampler_states[k] for k in [i, j]
             )
+            temperatures = [self._thermodynamic_states[k].temperature for k in range(self.n_replicas)]
+            temp_i = temperatures.index(self._temperature_list[i])
+            temp_j = temperatures.index(self._temperature_list[j])
             thermo_state_i, thermo_state_j = (
-                self._thermodynamic_states[k] for k in [i, j]
+                self._thermodynamic_states[k] for k in [temp_i, temp_j]
             )
+
+            # Compute the energies.
             energy_ii = self._compute_reduced_potential(
                 [sampler_state_i, thermo_state_i]
             )
@@ -550,19 +554,22 @@ class ReplicaExchange:
         # Compute the reduced potential matrix between all possible couples
         self.energy_matrix = np.zeros((self.n_replicas, self.n_replicas))
         inps = []
-        for _, sampler_state in enumerate(self._replicas_sampler_states):
+        for i_s, sampler_state in enumerate(self._replicas_sampler_states):
             for replica_j, thermo_state in enumerate(self._thermodynamic_states):
                 # Grab the context associated to thermodynamic state so from correct gpu
+                i_t = self._temperature_list.index(thermo_state.temperature)
                 context = self._get_context(replica_j, thermo_state)
-                inps.append((sampler_state, thermo_state, context))
+                inps.append((sampler_state, thermo_state, context, (i_s,i_t)))
 
         outs = mpiplus.distribute(
             self._compute_reduced_potential, inps, send_results_to="all"
         )
-        comm = MPI.COMM_WORLD
-        rank = comm.Get_rank()
+        ## Reorganize to put back in correct order
+        for out in outs:
+            i_s,i_t = out[1]
+            energy = out[0]
+            self.energy_matrix[i_s,i_t] = energy
         # logger.debug(f"_energy_computation from RANK:{rank}  LEN:{len(outs)}")
-        self.energy_matrix = np.array(outs).reshape((self.n_replicas, self.n_replicas))
 
     def _compute_reduced_potential(
         self, args
@@ -575,12 +582,15 @@ class ReplicaExchange:
             context = args[2]
         else:
             context, _ = cache.global_context_cache.get_context(thermo_state)
+        if len(args) == 4:
+            ind = args[3]
+        else: ind = None
         # logger.debug(f"_compute_reduced_potential from RANK:{rank} and {platform.getName()}:{platform.getPropertyValue(context, 'DeviceIndex')}")
 
         # Compute the reduced potential of the sampler_state configuration
         #  in the given thermodynamic state.
         sampler_state.apply_to_context(context)
-        return thermo_state.reduced_potential(context)
+        return thermo_state.reduced_potential(context), ind
 
     def _grab_forces(self):
         """

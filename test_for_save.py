@@ -8,7 +8,7 @@ from openmmtools import states, mcmc
 import openmmtools
 import os
 import os.path as osp
-from ReplicaExchangeProtocol import ReplicaExchange
+from ReplicaExchangeProtocol_copy import ReplicaExchange
 from Reporters import ReplicaStateReporter
 import time
 from mpi4py import MPI

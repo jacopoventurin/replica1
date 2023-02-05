@@ -401,7 +401,7 @@ class ReplicaExchange:
                     propagated_state, ignore_velocities=False
                 )
             
-            self._save_results()
+            self._save_results(md_step, save_interval, save, equilibration_timesteps)
             # verify if reporter was loaded
             #if self._reporter is not None:
             #    report_interval = self._reporter.get_report_interval()

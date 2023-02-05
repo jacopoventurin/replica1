@@ -613,7 +613,7 @@ class ReplicaExchange:
         sampler_state.apply_to_context(context)
         return thermo_state.reduced_potential(context)
 
-    def _grab__positions_forces(self):
+    def _grab_positions_forces(self):
         """
         Return position and forces of the target elements
 

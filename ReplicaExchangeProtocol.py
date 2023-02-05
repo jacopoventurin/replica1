@@ -400,21 +400,23 @@ class ReplicaExchange:
                 self._replicas_sampler_states[replica_id].__setstate__(
                     propagated_state, ignore_velocities=False
                 )
-
-            if self._reporter is not None:
-                report_interval = self._reporter.get_report_interval()
-            if md_step >= equilibration_timesteps:
-                if save and (md_step % save_interval == 0):
-                    self.positions.append([])
-                    self.forces.append([])
-                    self.positions[-1], self.forces[-1] = self._grab_positions_forces()
-                if self._reporter is not None:
-                    if (md_step % report_interval) == 0:
-                        self._grab_report()
-                    #    self._reporter.store_report(
-                    #        self._thermodynamic_states,
-                    #        self._replicas_sampler_states,
-                    #)
+            
+            self._save_results()
+            # verify if reporter was loaded
+            #if self._reporter is not None:
+            #    report_interval = self._reporter.get_report_interval()
+            #if md_step >= equilibration_timesteps:
+            #    if save and (md_step % save_interval == 0):
+            #        self.positions.append([])
+            #        self.forces.append([])
+            #        self.positions[-1], self.forces[-1] = self._grab_positions_forces()
+            #    if self._reporter is not None:
+            #        if (md_step % report_interval) == 0:
+            #            self._grab_report()
+            #        #    self._reporter.store_report(
+            #        #        self._thermodynamic_states,
+            #        #        self._replicas_sampler_states,
+            #        #)
             #if rank == 0:
             #    # verify if reporter was loaded
             #    if self._reporter is not None:
@@ -434,7 +436,17 @@ class ReplicaExchange:
     @mpiplus.on_single_node(0, broadcast_result=False)                        
     def _save_results(self, md_step, save_interval, save, equilibration_timesteps):
         # verify if reporter was loaded
-        pass
+        if self._reporter is not None:
+            report_interval = self._reporter.get_report_interval()
+        if md_step >= equilibration_timesteps:
+            if save and (md_step % save_interval == 0):
+                self.positions.append([])
+                self.forces.append([])
+                self.positions[-1], self.forces[-1] = self._grab_positions_forces()
+            if self._reporter is not None:
+                if (md_step % report_interval) == 0:
+                    self._grab_report()
+        
         
 
     def _run_replica(self, replica_id):

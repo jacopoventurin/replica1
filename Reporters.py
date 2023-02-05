@@ -64,38 +64,49 @@ class ReplicaStateReporter:
         self.values_list = None
 
 
-    def store_report(self, thermodynamic_states, sampler_states):
+    #def store_report(self, thermodynamic_states, sampler_states):
+    def store_report(self, context, i_t):
         """
-        Generate and store in memory a report from thermo_state, sampler_state objects.
+        Generate and store in memory a report from context. The contextshould be already initialized
+        calling sampler_state.apply_to_context(context) 
         The report can be written in the output file calling report() method.
 
         Parameters
         ----------
-        tehrmodynamic_satate : 
+        context : 
             
-        sampler_state : 
+        i_t :
+            temperature index 
 
         """
 
         if not self._hasTimeInitialized:
-            self._initialSimulationTime = self._getInitialSimulationTime(thermodynamic_states[0], sampler_states[0])#state.getTime()
+            self._initialSimulationTime = self._getInitialSimulationTime(context)#state.getTime()
             self._initialClockTime = time.time()
 
             self._hasTimeInitialized = True
         
         if self.values_list is None:
             self.values_list = []
+        
+        state = context.getState(getEnergy=self._needEnergy, getParameters=self._needParameters)
 
-        for i_t, (thermo_state, sampler_state) in enumerate(zip(thermodynamic_states, sampler_states)):
-            context, _ = cache.global_context_cache.get_context(thermo_state)
-            sampler_state.apply_to_context(context)
-            state = context.getState(getEnergy=self._needEnergy, getParameters=self._needParameters)
+        # Check for errors
+        self._checkForErrors(state)
 
-            # Check for errors
-            self._checkForErrors(state)
+        # Query for the values
+        self.values_list.append(self._constructReportValues(state, i_t))
 
-            # Query for the values
-            self.values_list.append(self._constructReportValues(state, i_t))
+        #for i_t, (thermo_state, sampler_state) in enumerate(zip(thermodynamic_states, sampler_states)):
+        #    context, _ = cache.global_context_cache.get_context(thermo_state)
+        #    sampler_state.apply_to_context(context)
+        #    state = context.getState(getEnergy=self._needEnergy, getParameters=self._needParameters)
+#
+        #    # Check for errors
+        #    self._checkForErrors(state)
+#
+        #    # Query for the values
+        #    self.values_list.append(self._constructReportValues(state, i_t))
 
 
 
@@ -134,12 +145,10 @@ class ReplicaStateReporter:
         """
         return self._reportInterval
 
-    def _getInitialSimulationTime(self, thermo_state, sampler_state):
+    def _getInitialSimulationTime(self, context):
         """
-        Compute initial simulation time from a particular thermo_state and the corresponding sampler state
+        Compute initial simulation time from a particular context
         """
-        context, _ = cache.global_context_cache.get_context(thermo_state)
-        sampler_state.apply_to_context(context)
         state = context.getState(getParameters=self._needParameters)
 
         return state.getTime()

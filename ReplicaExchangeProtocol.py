@@ -188,13 +188,7 @@ class ReplicaExchange:
                 mixing=mixing, n_attempts=n_attempts
             )
             end = time()
-            #if rank == 0:
-            #    logger.warning(f"Mix replicas took {end-start} [sec]")
-            #    for ii in range(self.n_replicas):
-            #        logger.debug(
-            #            f"Check position post-mix replica {ii} {self._grab_forces()[0][ii][0]}"
-            #        )
-            #    print(self.acceptance_matrix)
+
 
         if rank == 0:
             if checkpoint_simulations:
@@ -407,7 +401,20 @@ class ReplicaExchange:
                     propagated_state, ignore_velocities=False
                 )
 
-            self._save_results(md_step,save_interval,save,equilibration_timesteps)
+            if self._reporter is not None:
+                report_interval = self._reporter.get_report_interval()
+            if md_step >= equilibration_timesteps:
+                if save and (md_step % save_interval == 0):
+                    self.positions.append([])
+                    self.forces.append([])
+                    self.positions[-1], self.forces[-1] = self._grab_positions_forces()
+                if self._reporter is not None:
+                    if (md_step % report_interval) == 0:
+                        self._grab_report()
+                    #    self._reporter.store_report(
+                    #        self._thermodynamic_states,
+                    #        self._replicas_sampler_states,
+                    #)
             #if rank == 0:
             #    # verify if reporter was loaded
             #    if self._reporter is not None:
@@ -427,19 +434,8 @@ class ReplicaExchange:
     @mpiplus.on_single_node(0, broadcast_result=False)                        
     def _save_results(self, md_step, save_interval, save, equilibration_timesteps):
         # verify if reporter was loaded
-        if self._reporter is not None:
-            report_interval = self._reporter.get_report_interval()
-        if md_step >= equilibration_timesteps:
-            if save and (md_step % save_interval == 0):
-                self.positions.append([])
-                self.forces.append([])
-                self.positions[-1], self.forces[-1] = self._grab_forces()
-            if self._reporter is not None:
-                if (md_step % report_interval) == 0:
-                    self._reporter.store_report(
-                        self._thermodynamic_states,
-                        self._replicas_sampler_states,
-                    )
+        pass
+        
 
     def _run_replica(self, replica_id):
         comm = MPI.COMM_WORLD
@@ -605,7 +601,7 @@ class ReplicaExchange:
         sampler_state.apply_to_context(context)
         return thermo_state.reduced_potential(context)
 
-    def _grab_forces(self):
+    def _grab__positions_forces(self):
         """
         Return position and forces of the target elements
 
@@ -633,6 +629,17 @@ class ReplicaExchange:
             positions[i_t] = position
             forces[i_t] = force
         return positions, forces
+
+    
+    def _grab_report(self):
+        for (thermo_state, sampler_state) in zip(
+            self._thermodynamic_states, self._replicas_sampler_states
+        ):
+            i_t = self._temperature_list.index(thermo_state.temperature)
+            context = self._get_context(i_t, thermo_state)
+            sampler_state.apply_to_context(context)
+
+            self._reporter.store_report(context,i_t)
 
     def _define_neighbors(self):
         """ Define all possible couples of neighbors """

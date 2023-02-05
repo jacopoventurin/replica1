@@ -71,13 +71,8 @@ class ReplicaExchange:
             self._thermodynamic_states[i].temperature for i in range(self.n_replicas)
         ]
         self.rescale_velocities = rescale_velocities
-        if save_temperatures_history:
-            self._temperature_history = []
-            self._temperature_history.append(
-                [tl.value_in_unit(unit.kelvin) for tl in self._temperature_list]
-            )
-        else:
-            self._temperature_history = None
+        self.save_temperatures_history = save_temperatures_history
+        self._initialize_store_variables()
 
         platform = mm.Platform.getPlatformByName("CUDA")
         self.n_gpus = get_available_gpus()
@@ -156,10 +151,7 @@ class ReplicaExchange:
         """
         comm = MPI.COMM_WORLD
         rank = comm.Get_rank()
-        self.positions = []
-        self.forces = []
-        if rank == 0:
-            self.acceptance_matrix = np.zeros((self.n_replicas, self.n_replicas))
+        
         self._define_target_elements_and_dimension(save_atoms)
 
         if mixing == "neighbors":
@@ -196,13 +188,13 @@ class ReplicaExchange:
                 mixing=mixing, n_attempts=n_attempts
             )
             end = time()
-            if rank == 0:
-                logger.warning(f"Mix replicas took {end-start} [sec]")
-                for ii in range(self.n_replicas):
-                    logger.debug(
-                        f"Check position post-mix replica {ii} {self._grab_forces()[0][ii][0]}"
-                    )
-                print(self.acceptance_matrix)
+            #if rank == 0:
+            #    logger.warning(f"Mix replicas took {end-start} [sec]")
+            #    for ii in range(self.n_replicas):
+            #        logger.debug(
+            #            f"Check position post-mix replica {ii} {self._grab_forces()[0][ii][0]}"
+            #        )
+            #    print(self.acceptance_matrix)
 
         if rank == 0:
             if checkpoint_simulations:
@@ -226,7 +218,6 @@ class ReplicaExchange:
                     positions = np.split(positions, n_iterations, axis=1)
                     forces = np.split(forces, n_iterations, axis=1)
                 #return positions_list, forces_list, self.acceptance_matrix
-
                 return (
                     positions,
                     forces,
@@ -293,6 +284,20 @@ class ReplicaExchange:
         else:
             return None
 
+    @mpiplus.on_single_node(0, broadcast_result=False)
+    def _initialize_store_variables(self):
+        self.positions = []
+        self.forces = []
+        self.acceptance_matrix = np.zeros((self.n_replicas, self.n_replicas))
+
+        if self.save_temperatures_history:
+            self._temperature_history = []
+            self._temperature_history.append(
+                [tl.value_in_unit(unit.kelvin) for tl in self._temperature_list]
+            )
+        else:
+            self._temperature_history = None
+
     def _save_context_checkpoints(self, filename: str = "checkpoint"):
         """
         Save checkpoint in n_replicas number of file of the form
@@ -331,6 +336,7 @@ class ReplicaExchange:
                 sampler_state.velocities = state.getVelocities()
             sampler_state.apply_to_context(context)
 
+    @mpiplus.on_single_node(0, broadcast_result=False)
     def _define_target_elements_and_dimension(self, save_atoms):
         """
         This method define target elements we whant to save during the simulation
@@ -401,20 +407,39 @@ class ReplicaExchange:
                     propagated_state, ignore_velocities=False
                 )
 
-            # verify if reporter was loaded
+            self._save_results(md_step,save_interval,save,equilibration_timesteps)
+            #if rank == 0:
+            #    # verify if reporter was loaded
+            #    if self._reporter is not None:
+            #        report_interval = self._reporter.get_report_interval()
+            #    if md_step >= equilibration_timesteps:
+            #        if save and (md_step % save_interval == 0):
+            #            self.positions.append([])
+            #            self.forces.append([])
+            #            self.positions[-1], self.forces[-1] = self._grab_forces()
+            #        if self._reporter is not None:
+            #            if (md_step % report_interval) == 0:
+            #                self._reporter.store_report(
+            #                    self._thermodynamic_states,
+            #                    self._replicas_sampler_states,
+            #                )
+
+    @mpiplus.on_single_node(0, broadcast_result=False)                        
+    def _save_results(self, md_step, save_interval, save, equilibration_timesteps):
+        # verify if reporter was loaded
+        if self._reporter is not None:
+            report_interval = self._reporter.get_report_interval()
+        if md_step >= equilibration_timesteps:
+            if save and (md_step % save_interval == 0):
+                self.positions.append([])
+                self.forces.append([])
+                self.positions[-1], self.forces[-1] = self._grab_forces()
             if self._reporter is not None:
-                report_interval = self._reporter.get_report_interval()
-            if md_step >= equilibration_timesteps:
-                if save and (md_step % save_interval == 0):
-                    self.positions.append([])
-                    self.forces.append([])
-                    self.positions[-1], self.forces[-1] = self._grab_forces()
-                if self._reporter is not None:
-                    if (md_step % report_interval) == 0:
-                        self._reporter.store_report(
-                            self._thermodynamic_states,
-                            self._replicas_sampler_states,
-                        )
+                if (md_step % report_interval) == 0:
+                    self._reporter.store_report(
+                        self._thermodynamic_states,
+                        self._replicas_sampler_states,
+                    )
 
     def _run_replica(self, replica_id):
         comm = MPI.COMM_WORLD

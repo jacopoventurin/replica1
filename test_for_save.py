@@ -8,7 +8,7 @@ from openmmtools import states, mcmc
 import openmmtools
 import os
 import os.path as osp
-from ReplicaExchangeProtocol_copy import ReplicaExchange
+from ReplicaExchangeProtocol import ReplicaExchange
 from Reporters import ReplicaStateReporter
 import time
 from mpi4py import MPI
@@ -99,7 +99,7 @@ parallel_tempering.load_reporter(reporter)
 # Run symulation and save position and forces every 100 timesteps
 
 sim_params ={
-    'n_iterations' : 500,
+    'n_iterations' : 100,
     'n_attempts': 23, #int(n_replicas*np.log(n_replicas)), 
     'md_timesteps': md_step, 
     'equilibration_timesteps': 0, 

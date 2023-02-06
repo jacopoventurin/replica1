@@ -58,6 +58,9 @@ class ReplicaExchange:
             the history of exchange is saved in a format (n_iteration, n_replicas).
                 obtained by get_temperature_history() method.
         """
+        comm = MPI.COMM_WORLD
+        rank = comm.Get_rank()
+        
         self._thermodynamic_states = thermodynamic_states
         self._replicas_sampler_states = sampler_states
         self._mcmc_move = mcmc_move
@@ -72,7 +75,14 @@ class ReplicaExchange:
         ]
         self.rescale_velocities = rescale_velocities
         self.save_temperatures_history = save_temperatures_history
-        self._initialize_store_variables()
+        if rank == 0:
+            if self.save_temperatures_history:
+                self._temperature_history = []
+                self._temperature_history.append(
+                    [tl.value_in_unit(unit.kelvin) for tl in self._temperature_list]
+                )
+            else:
+                self._temperature_history = None
 
         platform = mm.Platform.getPlatformByName("CUDA")
         self.n_gpus = get_available_gpus()
@@ -151,6 +161,11 @@ class ReplicaExchange:
         """
         comm = MPI.COMM_WORLD
         rank = comm.Get_rank()
+
+        if rank == 0:
+            self.positions = []
+            self.forces = []
+            self.acceptance_matrix = np.zeros((self.n_replicas, self.n_replicas))
         
         self._define_target_elements_and_dimension(save_atoms)
 
@@ -280,19 +295,19 @@ class ReplicaExchange:
         else:
             return None
 
-    @mpiplus.on_single_node(0, broadcast_result=False)
-    def _initialize_store_variables(self):
-        self.positions = []
-        self.forces = []
-        self.acceptance_matrix = np.zeros((self.n_replicas, self.n_replicas))
-
-        if self.save_temperatures_history:
-            self._temperature_history = []
-            self._temperature_history.append(
-                [tl.value_in_unit(unit.kelvin) for tl in self._temperature_list]
-            )
-        else:
-            self._temperature_history = None
+    #@mpiplus.on_single_node(0, broadcast_result=False)
+    #def _initialize_store_variables(self):
+    #    self.positions = []
+    #    self.forces = []
+    #    self.acceptance_matrix = np.zeros((self.n_replicas, self.n_replicas))
+#
+    #    if self.save_temperatures_history:
+    #        self._temperature_history = []
+    #        self._temperature_history.append(
+    #            [tl.value_in_unit(unit.kelvin) for tl in self._temperature_list]
+    #        )
+    #    else:
+    #        self._temperature_history = None
 
     def _save_context_checkpoints(self, filename: str = "checkpoint"):
         """

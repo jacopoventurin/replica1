@@ -548,7 +548,7 @@ class ReplicaExchange:
             self.acceptance_matrix[i, j] += 1
 
             if self.energy_matrix is not None:
-                self.energy_matrix[[i, j]] = self.energy_matrix[[j, i]]
+                self.energy_matrix[:,[i,j]] = self.energy_matrix[:,[j,i]]
 
     def _compute_reduced_potential_matrix(self):
         # Compute the reduced potential matrix between all possible couples
@@ -557,18 +557,17 @@ class ReplicaExchange:
         for i_s, sampler_state in enumerate(self._replicas_sampler_states):
             for replica_j, thermo_state in enumerate(self._thermodynamic_states):
                 # Grab the context associated to thermodynamic state so from correct gpu
-                i_t = self._temperature_list.index(thermo_state.temperature)
                 context = self._get_context(replica_j, thermo_state)
-                inps.append((sampler_state, thermo_state, context, (i_s,i_t)))
+                inps.append((sampler_state, thermo_state, context, (i_s,replica_j)))
 
         outs = mpiplus.distribute(
             self._compute_reduced_potential, inps, send_results_to="all"
         )
         ## Reorganize to put back in correct order
         for out in outs:
-            i_s,i_t = out[1]
+            i_s,replica_j = out[1]
             energy = out[0]
-            self.energy_matrix[i_s,i_t] = energy
+            self.energy_matrix[i_s,replica_j] = energy
         # logger.debug(f"_energy_computation from RANK:{rank}  LEN:{len(outs)}")
 
     def _compute_reduced_potential(

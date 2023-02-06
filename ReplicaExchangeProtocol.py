@@ -160,7 +160,7 @@ class ReplicaExchange:
         for i_t in range(n_iterations):
             start = time()
             ## Propagate dynamics
-            logger.warning(f"Propagate replicas iter:{i_t}")
+            #logger.warning(f"Propagate replicas iter:{i_t}")
             self._propagate_replicas(
                 md_timesteps=md_timesteps,
                 equilibration_timesteps=equilibration_timesteps,
@@ -168,7 +168,8 @@ class ReplicaExchange:
                 save_interval=save_interval,
             )
             end = time()
-            logger.warning(f"Propagate replicas took {end-start} [sec]")
+            if rank == 0:
+                logger.warning(f"Propagate replicas took {end-start} [sec]")
 
             ## Energy matrix computation
             start = time()
@@ -179,10 +180,11 @@ class ReplicaExchange:
             #self._compute_reduced_potential_matrix()
 
             end = time()
-            logger.debug(f"Energy matrix computation took {end-start} [sec]")
+            if rank == 0:
+                logger.debug(f"Energy matrix computation took {end-start} [sec]")
 
             ## Mix replicas
-            logger.warning(f"Mix replicas iter:{i_t}")
+            #logger.warning(f"Mix replicas iter:{i_t}")
             start = time()
             self._thermodynamic_states = self._mix_replicas(
                 mixing=mixing, n_attempts=n_attempts

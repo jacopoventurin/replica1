@@ -8,7 +8,7 @@ from openmmtools import states, mcmc
 import openmmtools
 import os
 import os.path as osp
-from ReplicaExchangeProtocol_copy2 import ReplicaExchange
+from ReplicaExchangeProtocol import ReplicaExchange
 from Reporters import ReplicaStateReporter
 import time
 from mpi4py import MPI
@@ -92,7 +92,7 @@ parallel_tempering = ReplicaExchange(
 
 # Define and load reporter 
 reporter = ReplicaStateReporter('state.csv', reportInterval=1, time=True, potentialEnergy=True,
-                                kineticEnergy=True, totalEnergy=True, volume=True, speed=True, elapsedTime=True)
+                                kineticEnergy=True, totalEnergy=True, bathTemperature=True, volume=True, speed=True, elapsedTime=True)
 
 parallel_tempering.load_reporter(reporter)
 

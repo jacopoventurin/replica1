@@ -6,7 +6,7 @@ import time
 
 class ReplicaStateReporter:
     def __init__(self, file, reportInterval, time=False, potentialEnergy=False, kineticEnergy=False, 
-                totalEnergy=False, volume=False, elapsedTime=False, speed=False, separator=',', append=True):
+                totalEnergy=False, bathTemperature=False, volume=False, elapsedTime=False, speed=False, separator=',', append=True):
         """
         Create a ReplicaStateReporter.
 
@@ -24,6 +24,8 @@ class ReplicaStateReporter:
             Whether to write the kinetic energy to the file
         totalEnergy : bool=False
             Whether to write the total energy to the file
+        bathTemperature : bool=False
+            Whether to write the temperature of the bath where the replica is 
         volume : bool=False
             Whether to write the periodic box volume to the file
         elapsedTime : bool=False
@@ -51,6 +53,7 @@ class ReplicaStateReporter:
         self._potentialEnergy = potentialEnergy
         self._kineticEnergy = kineticEnergy
         self._totalEnergy = totalEnergy
+        self._bathTemperature = bathTemperature
         self._volume = volume
         self._elapsedTime = elapsedTime
         self._speed = speed
@@ -65,7 +68,7 @@ class ReplicaStateReporter:
 
 
     #def store_report(self, thermodynamic_states, sampler_states):
-    def store_report(self, context, i_t):
+    def store_report(self, context, i_t, thermodynamic_state):
         """
         Generate and store in memory a report from context. The contextshould be already initialized
         calling sampler_state.apply_to_context(context) 
@@ -95,7 +98,7 @@ class ReplicaStateReporter:
         self._checkForErrors(state)
 
         # Query for the values
-        self.values_list.append(self._constructReportValues(state, i_t))
+        self.values_list.append(self._constructReportValues(state, i_t, thermodynamic_state))
 
         #for i_t, (thermo_state, sampler_state) in enumerate(zip(thermodynamic_states, sampler_states)):
         #    context, _ = cache.global_context_cache.get_context(thermo_state)
@@ -153,7 +156,7 @@ class ReplicaStateReporter:
 
         return state.getTime()
 
-    def _constructReportValues(self, state, index):
+    def _constructReportValues(self, state, index, thermo_state):
         """Query the simulation for the current state of our observables of interest.
 
         Parameters
@@ -182,6 +185,8 @@ class ReplicaStateReporter:
             values.append(state.getKineticEnergy().value_in_unit(unit.kilojoules_per_mole))
         if self._totalEnergy:
             values.append((state.getKineticEnergy()+state.getPotentialEnergy()).value_in_unit(unit.kilojoules_per_mole))
+        if self._bathTemperature:
+            values.append(thermo_state.temperature.value_in_unit(unit.kelvin))
         if self._volume:
             box = state.getPeriodicBoxVectors()
             volume = box[0][0]*box[1][1]*box[2][2]
@@ -229,6 +234,8 @@ class ReplicaStateReporter:
             headers.append('Kinetic Energy (kJ/mole)')
         if self._totalEnergy:
             headers.append('Total Energy (kJ/mole)')
+        if self._bathTemperature:
+            headers.append('Bath temperature (K)')
         if self._volume:
             headers.append('Box Volume (nm^3)')
         if self._elapsedTime:

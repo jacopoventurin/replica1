@@ -686,7 +686,7 @@ class ReplicaExchange:
             context = self._get_context(i_t, thermo_state)
             sampler_state.apply_to_context(context)
 
-            self._reporter.store_report(context,i_t)
+            self._reporter.store_report(context,i_t, thermo_state)
         self._reporter.report()
         
 

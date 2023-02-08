@@ -58,9 +58,6 @@ class ReplicaExchange:
             the history of exchange is saved in a format (n_iteration, n_replicas).
                 obtained by get_temperature_history() method.
         """
-        comm = MPI.COMM_WORLD
-        rank = comm.Get_rank()
-        
         self._thermodynamic_states = thermodynamic_states
         self._replicas_sampler_states = sampler_states
         self._mcmc_move = mcmc_move
@@ -74,15 +71,13 @@ class ReplicaExchange:
             self._thermodynamic_states[i].temperature for i in range(self.n_replicas)
         ]
         self.rescale_velocities = rescale_velocities
-        self.save_temperatures_history = save_temperatures_history
-        if rank == 0:
-            if self.save_temperatures_history:
-                self._temperature_history = []
-                self._temperature_history.append(
-                    [tl.value_in_unit(unit.kelvin) for tl in self._temperature_list]
-                )
-            else:
-                self._temperature_history = None
+        if save_temperatures_history:
+            self._temperature_history = []
+            self._temperature_history.append(
+                [tl.value_in_unit(unit.kelvin) for tl in self._temperature_list]
+            )
+        else:
+            self._temperature_history = None
 
         platform = mm.Platform.getPlatformByName("CUDA")
         self.n_gpus = get_available_gpus()
@@ -161,30 +156,28 @@ class ReplicaExchange:
         """
         comm = MPI.COMM_WORLD
         rank = comm.Get_rank()
-
-        if rank == 0:
-            self.positions = []
-            self.forces = []
-            self.acceptance_matrix = np.zeros((self.n_replicas, self.n_replicas))
-        
+        self.positions = []
+        self.forces = []
+        self.energies = []
+        self.acceptance_matrix = np.zeros((self.n_replicas, self.n_replicas))
         self._define_target_elements_and_dimension(save_atoms)
 
         if mixing == "neighbors":
             self._define_neighbors()
 
         for i_t in range(n_iterations):
-            start = time()
             ## Propagate dynamics
-            #logger.warning(f"Propagate replicas iter:{i_t}")
+            start = time()
             self._propagate_replicas(
                 md_timesteps=md_timesteps,
                 equilibration_timesteps=equilibration_timesteps,
                 save=save,
                 save_interval=save_interval,
             )
+
             end = time()
             if rank == 0:
-                logger.warning(f"Propagate replicas took {end-start} [sec]")
+                logger.warning(f"Propagate replicas iter:{i_t} took {end-start} [sec]")
 
             ## Energy matrix computation
             start = time()
@@ -192,20 +185,23 @@ class ReplicaExchange:
                 self._compute_reduced_potential_matrix()
             else:
                 self.energy_matrix = None
-            #self._compute_reduced_potential_matrix()
 
             end = time()
             if rank == 0:
                 logger.debug(f"Energy matrix computation took {end-start} [sec]")
 
             ## Mix replicas
-            #logger.warning(f"Mix replicas iter:{i_t}")
             start = time()
             self._thermodynamic_states = self._mix_replicas(
                 mixing=mixing, n_attempts=n_attempts
             )
             end = time()
-
+            #if rank == 0:
+            #    logger.warning(f"Mix replicas iter: {i_t} took {end-start} [sec]")
+            #    for ii in range(self.n_replicas):
+            #        logger.debug(
+            #            f"Check position post-mix replica {ii} {self._grab_forces()[0][ii][0]}"
+            #        )
 
         if rank == 0:
             if checkpoint_simulations:
@@ -229,6 +225,7 @@ class ReplicaExchange:
                     positions = np.split(positions, n_iterations, axis=1)
                     forces = np.split(forces, n_iterations, axis=1)
                 #return positions_list, forces_list, self.acceptance_matrix
+
                 return (
                     positions,
                     forces,
@@ -295,20 +292,6 @@ class ReplicaExchange:
         else:
             return None
 
-    #@mpiplus.on_single_node(0, broadcast_result=False)
-    #def _initialize_store_variables(self):
-    #    self.positions = []
-    #    self.forces = []
-    #    self.acceptance_matrix = np.zeros((self.n_replicas, self.n_replicas))
-#
-    #    if self.save_temperatures_history:
-    #        self._temperature_history = []
-    #        self._temperature_history.append(
-    #            [tl.value_in_unit(unit.kelvin) for tl in self._temperature_list]
-    #        )
-    #    else:
-    #        self._temperature_history = None
-
     def _save_context_checkpoints(self, filename: str = "checkpoint"):
         """
         Save checkpoint in n_replicas number of file of the form
@@ -347,7 +330,6 @@ class ReplicaExchange:
                 sampler_state.velocities = state.getVelocities()
             sampler_state.apply_to_context(context)
 
-    @mpiplus.on_single_node(0, broadcast_result=False)
     def _define_target_elements_and_dimension(self, save_atoms):
         """
         This method define target elements we whant to save during the simulation
@@ -417,23 +399,8 @@ class ReplicaExchange:
                 self._replicas_sampler_states[replica_id].__setstate__(
                     propagated_state, ignore_velocities=False
                 )
-            
+
             self._save_results(md_step, save_interval, save, equilibration_timesteps)
-            # verify if reporter was loaded
-            #if self._reporter is not None:
-            #    report_interval = self._reporter.get_report_interval()
-            #if md_step >= equilibration_timesteps:
-            #    if save and (md_step % save_interval == 0):
-            #        self.positions.append([])
-            #        self.forces.append([])
-            #        self.positions[-1], self.forces[-1] = self._grab_positions_forces()
-            #    if self._reporter is not None:
-            #        if (md_step % report_interval) == 0:
-            #            self._grab_report()
-            #        #    self._reporter.store_report(
-            #        #        self._thermodynamic_states,
-            #        #        self._replicas_sampler_states,
-            #        #)
             #if rank == 0:
             #    # verify if reporter was loaded
             #    if self._reporter is not None:
@@ -442,15 +409,16 @@ class ReplicaExchange:
             #        if save and (md_step % save_interval == 0):
             #            self.positions.append([])
             #            self.forces.append([])
-            #            self.positions[-1], self.forces[-1] = self._grab_forces()
-            #        if self._reporter is not None:
-            #            if (md_step % report_interval) == 0:
+            #            self.energies.append([])
+            #            self.positions[-1], self.forces[-1], self.energies[-1] = self._grab_forces()
+            #        if self._reporter is not None and (md_step % report_interval) == 0:
             #                self._reporter.store_report(
             #                    self._thermodynamic_states,
             #                    self._replicas_sampler_states,
+            #                    self._temperature_list,
             #                )
 
-    @mpiplus.on_single_node(0, broadcast_result=False)                        
+    @mpiplus.on_single_node(0, broadcast_result=False, sync_nodes=True)                        
     def _save_results(self, md_step, save_interval, save, equilibration_timesteps):
         # verify if reporter was loaded
         if self._reporter is not None:
@@ -463,7 +431,6 @@ class ReplicaExchange:
             if self._reporter is not None:
                 if (md_step % report_interval) == 0:
                     self._grab_report()
-        
         
 
     def _run_replica(self, replica_id):
@@ -519,7 +486,7 @@ class ReplicaExchange:
         # Rescale velocities
         for attempt in range(n_attempts):
             # logger.debug(f"_mix_replicas attempt:{attempt} from RANK:{rank}")
-            self._mix_states(mixing, random_number_list[attempt], premix_temperatures)
+            self._mix_states(mixing, random_number_list[attempt])
 
         if self._temperature_history is not None:
             temperatures = [
@@ -535,7 +502,7 @@ class ReplicaExchange:
         logger.warning(f"_mix_replicas Exchange took {end-start} [sec]")
         return self._thermodynamic_states
 
-    def _mix_states(self, mixing, random_number, premix_temperatures=None):
+    def _mix_states(self, mixing, random_number):
         """
         Perform mixing
         Decorator runs only on first node and all process halted until finished and then broadcast
@@ -555,14 +522,19 @@ class ReplicaExchange:
         self.acceptance_matrix[j, i] += 1
         end = time()
 
-        # Compute the energies.
         if self.energy_matrix is None:
+            ## Since the temperatures are swapping through time, we have to index correctly
             sampler_state_i, sampler_state_j = (
                 self._replicas_sampler_states[k] for k in [i, j]
             )
+            temperatures = [self._thermodynamic_states[k].temperature for k in range(self.n_replicas)]
+            temp_i = temperatures.index(self._temperature_list[i])
+            temp_j = temperatures.index(self._temperature_list[j])
             thermo_state_i, thermo_state_j = (
-                self._thermodynamic_states[k] for k in [i, j]
+                self._thermodynamic_states[k] for k in [temp_i, temp_j]
             )
+
+            # Compute the energies.
             energy_ii = self._compute_reduced_potential(
                 [sampler_state_i, thermo_state_i]
             )
@@ -590,31 +562,31 @@ class ReplicaExchange:
             self.acceptance_matrix[i, j] += 1
 
             if self.energy_matrix is not None:
-                self.energy_matrix[:,[i, j]] = self.energy_matrix[:,[j, i]]
-
-
+                self.energy_matrix[:,[i,j]] = self.energy_matrix[:,[j,i]]
 
     def _compute_reduced_potential_matrix(self):
         # Compute the reduced potential matrix between all possible couples
         self.energy_matrix = np.zeros((self.n_replicas, self.n_replicas))
         inps = []
-        for _, sampler_state in enumerate(self._replicas_sampler_states):
+        for i_s, sampler_state in enumerate(self._replicas_sampler_states):
             for replica_j, thermo_state in enumerate(self._thermodynamic_states):
                 # Grab the context associated to thermodynamic state so from correct gpu
                 context = self._get_context(replica_j, thermo_state)
-                inps.append((sampler_state, thermo_state, context))
+                inps.append((sampler_state, thermo_state, context, (i_s,replica_j)))
 
         outs = mpiplus.distribute(
             self._compute_reduced_potential, inps, send_results_to="all"
         )
-        comm = MPI.COMM_WORLD
-        rank = comm.Get_rank()
+        ## Reorganize to put back in correct order
+        for out in outs:
+            i_s,replica_j = out[1]
+            energy = out[0]
+            self.energy_matrix[i_s,replica_j] = energy
         # logger.debug(f"_energy_computation from RANK:{rank}  LEN:{len(outs)}")
-        self.energy_matrix = np.array(outs).reshape((self.n_replicas, self.n_replicas))
 
     def _compute_reduced_potential(
         self, args
-    ):  # ,sampler_state, thermo_state, context=None):
+    ):  
         comm = MPI.COMM_WORLD
         rank = comm.Get_rank()
         sampler_state = args[0]
@@ -623,12 +595,15 @@ class ReplicaExchange:
             context = args[2]
         else:
             context, _ = cache.global_context_cache.get_context(thermo_state)
+        if len(args) == 4:
+            ind = args[3]
+        else: ind = None
         # logger.debug(f"_compute_reduced_potential from RANK:{rank} and {platform.getName()}:{platform.getPropertyValue(context, 'DeviceIndex')}")
 
         # Compute the reduced potential of the sampler_state configuration
         #  in the given thermodynamic state.
         sampler_state.apply_to_context(context)
-        return thermo_state.reduced_potential(context)
+        return thermo_state.reduced_potential(context), ind
 
     def _grab_positions_forces(self):
         """
@@ -659,16 +634,17 @@ class ReplicaExchange:
             forces[i_t] = force
         return positions, forces
 
-    
     def _grab_report(self):
         for (thermo_state, sampler_state) in zip(
             self._thermodynamic_states, self._replicas_sampler_states
         ):
             i_t = self._temperature_list.index(thermo_state.temperature)
+            
             context = self._get_context(i_t, thermo_state)
             sampler_state.apply_to_context(context)
 
-            self._reporter.store_report(context,i_t)
+            self._reporter.store_report(context,i_t, self._thermodynamic_states[i_t])
+        self._reporter.report()
 
     def _define_neighbors(self):
         """ Define all possible couples of neighbors """
@@ -704,9 +680,7 @@ class ReplicaExchange:
         """
         Rescale velocities to desired temperature from thermodynamic state after swap attempt
         """
-        for i_t, (thermo_state, sampler_state) in enumerate(
-            zip(self._thermodynamic_states, self._replicas_sampler_states)
-        ):
+        for (thermo_state, sampler_state) in zip(self._thermodynamic_states, self._replicas_sampler_states):
             i_t = self._temperature_list.index(thermo_state.temperature)
             context = self._get_context(i_t, thermo_state)
             sampler_state.apply_to_context(context)

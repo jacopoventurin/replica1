@@ -391,16 +391,15 @@ class ReplicaExchange:
         rank = comm.Get_rank()
 
         for md_step in range(md_timesteps):
-            propagated_states, replica_ids = mpiplus.distribute(
-                self._run_replica, range(self.n_replicas), send_results_to=0
+            propagated_states = mpiplus.distribute(
+                self._run_replica, range(self.n_replicas), send_results_to='all'
             )
 
-            # Update all sampler states. For non-0 nodes, this will update only the
-            # sampler states associated to the replicas propagated by this node.
-            for replica_id, propagated_state in zip(replica_ids, propagated_states):
+            # Update all sampler states.
+            for replica_id, propagated_state in enumerate(propagated_states):
                 self._replicas_sampler_states[replica_id].__setstate__(
                     propagated_state, ignore_velocities=False
-                )
+            )
 
             if rank == 0:
                 # verify if reporter was loaded
@@ -493,7 +492,6 @@ class ReplicaExchange:
         Perform mixing
         Decorator runs only on first node and all process halted until finished and then broadcast
         """
-        start = time()
         comm = MPI.COMM_WORLD
         rank = comm.Get_rank()
 
@@ -506,7 +504,6 @@ class ReplicaExchange:
                 )
             )
         self.acceptance_matrix[j, i] += 1
-        end = time()
 
         if self.energy_matrix is None:
             ## Since the temperatures are swapping through time, we have to index correctly
@@ -563,11 +560,7 @@ class ReplicaExchange:
         outs = mpiplus.distribute(
             self._compute_reduced_potential, inps, send_results_to="all"
         )
-        ## Reorganize to put back in correct order
-        for out in outs:
-            i_s,replica_j = out[1]
-            energy = out[0]
-            self.energy_matrix[i_s,replica_j] = energy
+        self.energy_matrix = np.array(outs).reshape(self.n_replicas,self.n_replicas)
         # logger.debug(f"_energy_computation from RANK:{rank}  LEN:{len(outs)}")
 
     def _compute_reduced_potential(
@@ -581,15 +574,13 @@ class ReplicaExchange:
             context = args[2]
         else:
             context, _ = cache.global_context_cache.get_context(thermo_state)
-        if len(args) == 4:
-            ind = args[3]
-        else: ind = None
+
         # logger.debug(f"_compute_reduced_potential from RANK:{rank} and {platform.getName()}:{platform.getPropertyValue(context, 'DeviceIndex')}")
 
         # Compute the reduced potential of the sampler_state configuration
         #  in the given thermodynamic state.
         sampler_state.apply_to_context(context)
-        return thermo_state.reduced_potential(context), ind
+        return thermo_state.reduced_potential(context)
 
     def _grab_forces(self):
         """

@@ -11,6 +11,10 @@ import os.path as osp
 from ReplicaExchangeProtocol import ReplicaExchange
 from Reporters import ReplicaStateReporter
 import time
+from mpi4py import MPI
+
+comm = MPI.COMM_WORLD
+rank = comm.Get_rank()
 
 
 if osp.exists('output-1.nc'): os.system('rm output-1.nc')
@@ -90,6 +94,7 @@ parallel_tempering = ReplicaExchange(
     sampler_states=sampler_states, 
     mcmc_move=langevin_move,
     rescale_velocities=True,
+    save_temperatures_history=True,
 )
 
 # Load topology in order to allow 
@@ -97,7 +102,7 @@ parallel_tempering.load_topology(md.load_topology('chi_sys.pdb'))
 
 # Define and load reporter 
 reporter = ReplicaStateReporter('state.csv', reportInterval=20, time=True, potentialEnergy=True,
-                                kineticEnergy=True, totalEnergy=True, volume=True, elapsedTime=True)
+                                kineticEnergy=True, totalEnergy=True, bathTemperature=True ,volume=True, elapsedTime=True)
 
 parallel_tempering.load_reporter(reporter)
 
@@ -109,44 +114,48 @@ parallel_tempering.load_reporter(reporter)
 
 sim_params ={
     'n_attempts': 129, #n_replicas*log(n_replicas)
-    'md_timesteps': 600, #600 ps 
-    'equilibration_timesteps': 100, # 100 ps
+    'md_timesteps': 540, #540 ps 
+    'equilibration_timesteps': 40, # 40 ps
     'save': True, 
-    'save_interval': 3, # save every 3 ps
-    'checkpoint_simulations': False, 
+    'save_interval': 2, # save every 2 ps
     'mixing': 'all',   #try exchange between neighbors only
     'save_atoms': 'protein',   #save position and forces of protein's atoms only
     'reshape_for_TICA': 'True'  #save in format for TICA analysis 
 }
 
 
-print('Simulation of 20 ns trajectory trying 129 exchange between all replicas for each timesteps with rescale of velocities')
+print('Simulation of 200 ns trajectory trying 129 exchange between all replicas for each timesteps with rescale of velocities')
 print('-' * 50)
 start = time.time()
 print(f'Simulation started at {time.ctime()}')
 print('-' * 50)
 
-for step in range(10):   # 20 ns of production time 
+for step in range(100):   # 200 ns of production time 
     # locally save position and forces every 2 ns
-    position, forces, acceptance = parallel_tempering.run(4, **sim_params)  
-    np.save(f'position_{step}.npy', position)
-    np.save(f'forces_{step}.npy', forces)
-    np.save(f'acceptance_{step}.npy', acceptance)
+    partial_start = time.time()
+    if ((step+1) % 10) == 0:
+        position, forces, acceptance = parallel_tempering.run(4, **sim_params, checkpoint_simulations=True)  
+    else:
+        position, forces, acceptance = parallel_tempering.run(4, **sim_params, checkpoint_simulations=True)
+
+    if rank == 0:
+        np.save(f'position_{step}.npy', position)
+        np.save(f'forces_{step}.npy', forces)
+        np.save(f'acceptance_{step}.npy', acceptance)
     
-    del position
-    del forces
+        del position
+        del forces
 
-    # save checkpoint after 10 ns
-    if step == 4:
-        parallel_tempering.save_checkpoint(code='10ns')
+        if ((step+1)%10) == 0:
+            parallel_tempering.save_temperature_history(filename=f'temperature_history_{(step+1)*20}ns.npy')
+
     
-    print(f'{(step+1)*2} ns of simulation done')
+        print(f'{(step+1)*5} ns of simulation done in {(time.time()-partial_start):.3f} s, simulation speed {86400*5/(time.time()-partial_start)}ns/day')
+    
+# save temperature history
+if rank == 0:
+    parallel_tempering.save_temperature_history()
 
-# save final checkpoint
-parallel_tempering.save_checkpoint(code='20ns')
-
-temperature_history = parallel_tempering.get_temperature_history(asNpy=True)
-np.save('temperature_history', temperature_history)
 
 end = time.time()
 print(f'Simulation ended at {time.ctime()}')

@@ -3,11 +3,8 @@ import openmm as mm
 import mdtraj as md
 from openmm import unit
 import openmm.app as app
-import os
 from openmmtools import states, mcmc
 import openmmtools
-import os
-import os.path as osp
 from ReplicaExchangeProtocol import ReplicaExchange
 from Reporters import ReplicaStateReporter
 import time
@@ -17,7 +14,6 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 
 
-if osp.exists('output-1.nc'): os.system('rm output-1.nc')
 
 # System creation
 # Define force field
@@ -37,7 +33,7 @@ temperature = 300*unit.kelvin
 timestep = 2.0 * unit.femtosecond
 
 # Load pdb file 
-pdb = app.PDBFile('chi_sys.pdb')
+pdb = app.PDBFile('system/chi_sys.pdb')
 modeller = app.modeller.Modeller(pdb.topology, pdb.positions)
 
 # Define system 
@@ -53,14 +49,9 @@ create_system_kwargs = dict(
 
 
 ff = app.ForceField(*forcefield)
-# Add solvent
-#modeller.addSolvent(ff)
 
 # Create a system
 system = ff.createSystem(modeller.topology, **create_system_kwargs)
-
-#barostat = mm.MonteCarloBarostat(pressure, temperature)
-#force_id = system.addForce(barostat)
 
 
 platform = mm.Platform.getPlatformByName("CUDA")
@@ -106,9 +97,6 @@ reporter = ReplicaStateReporter('state.csv', reportInterval=20, time=True, poten
 
 parallel_tempering.load_reporter(reporter)
 
-# Load state of the simulation from checkpoint 
-#parallel_tempering._load_contexts()
-
 # Run symulation and save position and forces every 100 timesteps
 
 
@@ -131,12 +119,9 @@ print(f'Simulation started at {time.ctime()}')
 print('-' * 50)
 
 for step in range(100):   # 200 ns of production time 
-    # locally save position and forces every 2 ns
+    # locally save position and forces every 5 ns
     partial_start = time.time()
-    if ((step+1) % 10) == 0:
-        position, forces, acceptance = parallel_tempering.run(4, **sim_params, checkpoint_simulations=True)  
-    else:
-        position, forces, acceptance = parallel_tempering.run(4, **sim_params, checkpoint_simulations=True)
+    position, forces, acceptance = parallel_tempering.run(10, **sim_params)
 
     if rank == 0:
         np.save(f'position_{step}.npy', position)
@@ -147,15 +132,11 @@ for step in range(100):   # 200 ns of production time
         del forces
 
         if ((step+1)%10) == 0:
-            parallel_tempering.save_temperature_history(filename=f'temperature_history_{(step+1)*20}ns.npy')
+            parallel_tempering.save_temperature_history(filename=f'temperature_history_{(step+1)*5}ns.npy')
+            parallel_tempering._save_context_checkpoints(f"checkpoint_{((step+1)*5)}ns")
 
     
         print(f'{(step+1)*5} ns of simulation done in {(time.time()-partial_start):.3f} s, simulation speed {86400*5/(time.time()-partial_start)}ns/day')
-    
-# save temperature history
-if rank == 0:
-    parallel_tempering.save_temperature_history()
-
 
 end = time.time()
 print(f'Simulation ended at {time.ctime()}')

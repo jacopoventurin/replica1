@@ -1,11 +1,11 @@
 #!/bin/bash
 
-#SBATCH --job-name=Test2
+#SBATCH --job-name=SimChign
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=42G
 #SBATCH --time=4-00:00:00
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:4
 #SBATCH --partition=gpu
 # #SBATCH --exclude=xgpu[17-23]
 
@@ -19,6 +19,7 @@ echo "# what node are we running on?"
 hostname -s
 
 # your commands here..
+cwd=$(pwd)
 
 # Activate virtual envirment 
 cd /home/jacopo/
@@ -26,6 +27,6 @@ source miniconda/bin/activate
 conda activate mdsimulations
 
 # Run program
-cd /scratch/jacopo/trans_temp/example_test/replica1/
+cd ${cwd}
 
-python sim-chignolin.py
+mpiexec --oversubscribe -n 4 python sim-chignolin.py

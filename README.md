@@ -71,10 +71,21 @@ parallel_tempering = ReplicaExchange(
 parallel_tempering.load_topology(md.load_topology('chi_sys.pdb'))
 
 # Define and load reporter 
-reporter = ReplicaStateReporter('state.csv', reportInterval=1, time=True, potentialEnergy=True,
+reporter = ReplicaStateReporter('state.csv', reportInterval=2, time=True, potentialEnergy=True,
                                 kineticEnergy=True, totalEnergy=True, bathTemperature=True)
 parallel_tempering.load_reporter(reporter)
 
+
+sim_params ={
+    'n_attempts': 129, #n_replicas*log(n_replicas)
+    'md_timesteps': 540, #540 ps 
+    'equilibration_timesteps': 40, # 40 ps
+    'save': True, 
+    'save_interval': 2, # save every 2 ps
+    'mixing': 'all',   #try exchange between neighbors only
+    'save_atoms': 'protein',   #save position and forces of protein's atoms only
+    'reshape_for_TICA': 'True'  #save in format for TICA analysis
+}
 
 # Run symulation and save position and forces
 position, forces, acceptance = parallel_tempering.run(10, **sim_params)

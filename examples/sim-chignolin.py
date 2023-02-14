@@ -92,7 +92,7 @@ parallel_tempering = ReplicaExchange(
 parallel_tempering.load_topology(md.load_topology('chi_sys.pdb'))
 
 # Define and load reporter 
-reporter = ReplicaStateReporter('state.csv', reportInterval=20, time=True, potentialEnergy=True,
+reporter = ReplicaStateReporter('state.csv', reportInterval=2, time=True, potentialEnergy=True,
                                 kineticEnergy=True, totalEnergy=True, bathTemperature=True ,volume=True, elapsedTime=True)
 
 parallel_tempering.load_reporter(reporter)

@@ -67,14 +67,13 @@ class ReplicaStateReporter:
         self.values_list = None
 
 
-    #def store_report(self, thermodynamic_states, sampler_states):
     def store_report(self, context, i_t, thermodynamic_state):
         """
         Generate and store in memory a report from context. The contextshould be already initialized
         calling sampler_state.apply_to_context(context) 
         The report can be written in the output file calling report() method.
 
-        Parameters
+        Inputs
         ----------
         context : 
             
@@ -93,7 +92,6 @@ class ReplicaStateReporter:
             self.values_list = []
         
         state = context.getState(getEnergy=self._needEnergy, getParameters=self._needParameters)
-
         # Check for errors
         self._checkForErrors(state)
 

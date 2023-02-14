@@ -27,7 +27,7 @@ to unbias the simulation to the target temperature
 
 # Example
 
-~~~
+~~~python
 import numpy as np
 import openmm as mm
 import mdtraj as md

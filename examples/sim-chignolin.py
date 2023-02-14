@@ -127,9 +127,6 @@ for step in range(100):   # 200 ns of production time
         np.save(f'position_{step}.npy', position)
         np.save(f'forces_{step}.npy', forces)
         np.save(f'acceptance_{step}.npy', acceptance)
-    
-        del position
-        del forces
 
         if ((step+1)%10) == 0:
             parallel_tempering.save_temperature_history(filename=f'temperature_history_{(step+1)*5}ns.npy')
@@ -137,6 +134,9 @@ for step in range(100):   # 200 ns of production time
 
     
         print(f'{(step+1)*5} ns of simulation done in {(time.time()-partial_start):.3f} s, simulation speed {86400*5/(time.time()-partial_start)}ns/day')
+        
+    del position
+    del forces
 
 end = time.time()
 print(f'Simulation ended at {time.ctime()}')

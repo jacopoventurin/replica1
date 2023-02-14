@@ -106,7 +106,7 @@ sim_params ={
     'equilibration_timesteps': 40, # 40 ps
     'save': True, 
     'save_interval': 2, # save every 2 ps
-    'mixing': 'all',   #try exchange between neighbors only
+    'mixing': 'all',   #try exchange between all replicas
     'save_atoms': 'protein',   #save position and forces of protein's atoms only
     'reshape_for_TICA': 'True'  #save in format for TICA analysis 
 }

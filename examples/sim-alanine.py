@@ -88,18 +88,19 @@ parallel_tempering.load_reporter(reporter)
 
 
 sim_params ={
-    'n_attempts': 4, #n_replicas*log(n_replicas)
+    'n_attempts': 1, 
     'md_timesteps': 520, #520 ps 
     'equilibration_timesteps': 20, # 20 ps
     'save': True, 
     'save_interval': 1, # save every 1 ps
-    'mixing': 'all',   #try exchange between neighbors only
+    'mixing': 'neighbors',   #try exchange between neighbors only
     'save_atoms': 'protein',   #save position and forces of protein's atoms only
-    'reshape_for_TICA': 'True'  #save in format for TICA analysis 
+    'reshape_for_TICA': 'True',  #save in format for TICA analysis 
+    'verbose': 'True'  #print time information
 }
 
 
-print('Simulation of 500 ns trajectory trying 60 exchange between all replicas for each timesteps with rescale of velocities')
+print('Simulation of 500 ns trajectory trying 4 exchange between neighbor replicas for each timesteps with rescale of velocities')
 print('-' * 50)
 start = time.time()
 print(f'Simulation started at {time.ctime()}')

@@ -27,7 +27,7 @@ to unbias the simulation to the target temperature
 
 # Example
 
-```
+~~~
 import numpy as np
 import openmm as mm
 import mdtraj as md
@@ -101,4 +101,4 @@ del forces
 if rank == 0:
     parallel_tempering.save_temperature_history()
 
-```
+~~~

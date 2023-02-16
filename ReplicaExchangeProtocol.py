@@ -140,7 +140,7 @@ class ReplicaExchange:
             if set to 'all' positions and forces for all atoms in the system are saved
         reshape_for_TICA:
             position and forces are returned with shape
-                (n_iteration, n_replicas, md_timesteps-equilibration_timesteps)/save_interval, any, any)
+                (n_replicas, n_iteration, md_timesteps-equilibration_timesteps)/save_interval, any, any)
         verbose:
             if set to True information about paropagation and mixing time are reported
         verbose_interval:
@@ -220,9 +220,11 @@ class ReplicaExchange:
                 energies = np.swapaxes(np.array(self.energies), 0, 1)
                 if reshape_for_TICA:
                     # if reshape_for_TICA output is in the format shape 
-                    # n_iteration, n_replicas, md_timesteps-equilibration_timesteps)/save_interval, any, any
+                    # n_replicas, n_iteration, md_timesteps-equilibration_timesteps)/save_interval, any, any
                     positions = np.split(positions, n_iterations, axis=1)
                     forces = np.split(forces, n_iterations, axis=1)
+                    positions = np.transpose(positions, (1,0,2,3,4))
+                    forces = np.transpose(forces, (1,0,2,3,4))
                 #return positions_list, forces_list, self.acceptance_matrix
 
                 return (

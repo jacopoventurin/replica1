@@ -296,10 +296,13 @@ class ReplicaExchange:
 
         checkpoint_string = f"{filename}"
 
-        for (thermo_state, sampler_state) in zip(
-            self._thermodynamic_states, self._replicas_sampler_states
+        temperature_order = np.arange(self.n_replicas)
+
+        for idx, (thermo_state, sampler_state) in enumerate(
+            zip(self._thermodynamic_states, self._replicas_sampler_states)
         ):
             i_t = self._temperature_list.index(thermo_state.temperature)
+            temperature_order[i_t] = idx
             context = self._get_context(i_t, thermo_state)
             sampler_state.apply_to_context(context)
             state = context.getState(
@@ -308,6 +311,8 @@ class ReplicaExchange:
             state_xml = mm.XmlSerializer.serialize(state)
             with open(f"{checkpoint_string}-{i_t}.xml", "w") as output:
                 output.write(state_xml)
+        
+        np.save(f"{checkpoint_string}-temperature_order.npy", temperature_order)
 
     def _load_context_checkpoints(self, filename: str = "checkpoint", 
                                   temperature_order: list = None,):

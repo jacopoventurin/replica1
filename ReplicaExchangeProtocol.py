@@ -296,13 +296,13 @@ class ReplicaExchange:
 
         checkpoint_string = f"{filename}"
 
-        temperature_order = np.arange(self.n_replicas)
+        temperature_order = []
 
         for idx, (thermo_state, sampler_state) in enumerate(
             zip(self._thermodynamic_states, self._replicas_sampler_states)
         ):
             i_t = self._temperature_list.index(thermo_state.temperature)
-            temperature_order[i_t] = idx
+            temperature_order.append(i_t)
             context = self._get_context(i_t, thermo_state)
             sampler_state.apply_to_context(context)
             state = context.getState(
@@ -314,6 +314,8 @@ class ReplicaExchange:
         
         np.save(f"{checkpoint_string}-temperature_order.npy", temperature_order)
 
+
+    @mpiplus.on_single_node(0, broadcast_result=True)
     def _load_context_checkpoints(self, filename: str = "checkpoint", 
                                   temperature_order: list = None,):
         """

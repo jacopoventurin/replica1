@@ -97,8 +97,11 @@ reporter = ReplicaStateReporter('state.csv', reportInterval=2, time=True, potent
 
 parallel_tempering.load_reporter(reporter)
 
-# Run symulation and save position and forces every 100 timesteps
+# Eventually load state of the simulation from checkpoint 
+temperature_list = np.load('old_temperatures.npy')
+parallel_tempering._load_context_checkpoints(filename='checkpoints/checkpoint', temperature_order=temperature_list)
 
+# Run symulation and save position and forces every 100 timesteps
 
 sim_params ={
     'n_attempts': 129, #n_replicas*log(n_replicas)

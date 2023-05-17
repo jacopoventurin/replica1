@@ -40,8 +40,8 @@ import mdtraj as md
 from openmm import unit
 from openmmtools import states, mcmc
 import openmmtools
-from replica import ReplicaExchange
-from replica import ReplicaStateReporter
+from replica.ReplicaExchangeProtocol import ReplicaExchange
+from replica.Reporters import ReplicaStateReporter
 from mpi4py import MPI
 
 comm = MPI.COMM_WORLD

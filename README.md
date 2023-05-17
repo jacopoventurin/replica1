@@ -2,6 +2,13 @@
 
 This project contains code to perform parallel tempering simulation with openmm.
 
+The package can be installed using 
+```
+pip install git+https://github.com/jacopoventurin/replica1.git
+
+```
+
+
 The ReplicaExchange class support multiple process simulation via MPI.
 For example, if we whant to run sim.py usning 4 process
 
@@ -33,8 +40,8 @@ import mdtraj as md
 from openmm import unit
 from openmmtools import states, mcmc
 import openmmtools
-from ReplicaExchangeProtocol import ReplicaExchange
-from Reporters import ReplicaStateReporter
+from replica import ReplicaExchange
+from replica import ReplicaStateReporter
 from mpi4py import MPI
 
 comm = MPI.COMM_WORLD

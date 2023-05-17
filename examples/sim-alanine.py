@@ -3,8 +3,8 @@ from openmm import unit
 import openmm.app as app
 from openmmtools import states, mcmc
 import openmmtools
-from ReplicaExchangeProtocol import ReplicaExchange
-from Reporters import ReplicaStateReporter
+from replica.ReplicaExchangeProtocol import ReplicaExchange
+from replica.Reporters import ReplicaStateReporter
 import time
 from mpi4py import MPI
 

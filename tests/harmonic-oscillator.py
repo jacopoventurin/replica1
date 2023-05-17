@@ -8,8 +8,8 @@ from openmmtools import states, mcmc
 import openmmtools
 import os
 import os.path as osp
-from ReplicaExchangeProtocol import ReplicaExchange
-from Reporters import ReplicaStateReporter
+from replica.ReplicaExchangeProtocol import ReplicaExchange
+from replica.Reporters import ReplicaStateReporter
 import time
 from mpi4py import MPI
 np.random.seed(12345)

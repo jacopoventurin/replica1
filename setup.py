@@ -11,9 +11,9 @@ with open("requirements.txt") as f:
 setuptools.setup(
     name='replica',
     version='0.0.1',
-    author='Jacopo Venturin, Clark Templeton, "Fe" 
-    + "\u0301"
-    + "lix Musil',
+    author='Jacopo Venturin, Clark Templeton, Fe' 
+    + '\u0301'
+    + 'lix Musil',
     description='Package to perform parallel tempering simulation based on openmm',
     long_description=long_description,
     long_description_content_type="text/markdown",
